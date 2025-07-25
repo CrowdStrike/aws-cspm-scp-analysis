@@ -55,13 +55,13 @@ python analyze_scp_crowdstrike.py
 
 ### Advanced Usage
 ```bash
+# Write results to JSON file for analysis and automation
+python analyze_scp_crowdstrike.py --output-file
+
 # Use specific AWS profile
 python analyze_scp_crowdstrike.py --profile production
 
-# Use different region
-python analyze_scp_crowdstrike.py --region us-west-2
-
-# Use local template file instead of fetching from URL
+# Use local template file instead of fetching latest from URL
 python analyze_scp_crowdstrike.py --template-file /path/to/template.yaml
 
 # Get JSON output for automation
@@ -69,12 +69,6 @@ python analyze_scp_crowdstrike.py --output-format json
 
 # Get summary output
 python analyze_scp_crowdstrike.py --output-format summary
-
-# Write results to JSON file for analysis and automation
-python analyze_scp_crowdstrike.py --output-file
-
-# Combine options for comprehensive analysis
-python analyze_scp_crowdstrike.py --profile production --output-file
 ```
 
 ## Output Examples
@@ -113,12 +107,34 @@ python analyze_scp_crowdstrike.py --profile production --output-file
      - iam:CreateRole
      - iam:AttachRolePolicy
    CLOUDFORMATION:
-     - cloudformation:CreateStack
+     - cloudformation:CreateStackSet
+   ...
+
+📜 BLOCKING POLICIES:
+   Policy: policy-name (p-efgh5678)
+   Description: 
+   Blocked Actions: 1
+     - cloudformation:CreateStackSet
+
+   Policy: ploicy-name (p-ijkl9012)
+   Description: 
+   Blocked Actions: 43
+     - cloudformation:GetTemplate
+     - cloudformation:DeleteStack
+     ...
+
+🌍 REGION RESTRICTIONS:
+   Policy: policy-name (p-abcd1234)
+   Attached to: OU
+     🚫 Blocks regions: ap-south-1 (StringEquals on aws:RequestedRegion)
 
 💡 RECOMMENDATIONS:
    ⚠️  SCP conflicts detected that may prevent CrowdStrike template deployment.
-   🔴 CRITICAL: IAM permissions are blocked. The template cannot create required roles. Consider adding an exception for CrowdStrike IAM resources.
    🔴 CRITICAL: CloudFormation permissions are blocked. The template cannot deploy stacks. Add exceptions for CloudFormation operations on CrowdStrike resources.
+   🟡 MEDIUM: Lambda permissions are blocked. Custom resources may fail. Add exceptions for Lambda functions with CrowdStrike naming.
+   🟡 MEDIUM: EventBridge permissions are blocked. Real-time monitoring may fail. Add exceptions for EventBridge rules with 'cs-' prefix.
+   🔴 CRITICAL: Region restrictions detected that may prevent deployment.
+   💡 TIP: For multi-region CrowdStrike deployments, ensure all required regions are allowed. Real-time Visibility and DSPM features require deployment across multiple regions.
 ```
 
 ## Severity Levels
@@ -163,6 +179,22 @@ The JSON output file contains:
   "analysis_results": {
     "total_policies": 3,
     "severity": "HIGH",
+    "blocking_policies": [
+      {
+        "policy": {
+          "id": "p-abcd1234",
+          "name": "policy-name",
+          "description": "",
+          "content": {
+            "Version": "2012-10-17",
+            "Statement": [ "Statement Details..." ]
+          },
+          "attached_to": "Root",
+          "target_id": "r-abcd",
+          "target_name": "Root"
+        }
+      }
+    ]
     "blocked_actions": {
       "iam": ["iam:CreateRole", "iam:AttachRolePolicy"],
       "cloudformation": ["cloudformation:CreateStack"]
@@ -293,80 +325,6 @@ Error getting organization info: AccessDenied
 ⚠️  Account is not part of an organization. SCPs may not apply.
 ```
 **Note**: This is normal for standalone accounts. SCPs only apply to accounts in AWS Organizations.
-
-## Integration with CI/CD
-
-### GitHub Actions Example
-```yaml
-- name: Check SCP Compatibility
-  run: |
-    python analyze_scp_crowdstrike.py --output-file
-    if [ $? -eq 2 ]; then
-      echo "Critical SCP conflicts detected!"
-      cat fcs_scp_analysis_*.json
-      exit 1
-    fi
-    
-- name: Upload Analysis Results
-  uses: actions/upload-artifact@v3
-  with:
-    name: scp-analysis-results
-    path: fcs_scp_analysis_*.json
-```
-
-### Jenkins Pipeline
-```groovy
-script {
-    def exitCode = sh(
-        script: 'python analyze_scp_crowdstrike.py --output-file',
-        returnStatus: true
-    )
-    
-    // Archive the JSON results (auto-generated filename)
-    archiveArtifacts artifacts: 'fcs_scp_analysis_*.json', allowEmptyArchive: true
-    
-    if (exitCode == 2) {
-        error("Critical SCP conflicts detected - deployment will fail")
-    }
-}
-```
-
-### Automation Script Example
-```bash
-#!/bin/bash
-# Run SCP analysis and parse results
-python analyze_scp_crowdstrike.py --output-file
-EXIT_CODE=$?
-
-# Find the generated JSON file
-JSON_FILE=$(ls fcs_scp_analysis_*.json 2>/dev/null | head -1)
-
-if [ -z "$JSON_FILE" ]; then
-    echo "❌ JSON file not found"
-    exit 1
-fi
-
-echo "📄 Analysis file: $JSON_FILE"
-
-# Extract severity from JSON
-SEVERITY=$(jq -r '.summary.severity' "$JSON_FILE")
-BLOCKED_SERVICES=$(jq -r '.summary.blocked_services_count' "$JSON_FILE")
-
-echo "Analysis complete: Severity=$SEVERITY, Blocked Services=$BLOCKED_SERVICES"
-
-# Take action based on results
-if [ "$SEVERITY" = "HIGH" ]; then
-    echo "❌ Critical SCP conflicts detected - deployment will fail"
-    jq '.analysis_results.recommendations[]' "$JSON_FILE"
-    exit 2
-elif [ "$SEVERITY" = "MEDIUM" ]; then
-    echo "⚠️  Minor SCP conflicts detected - some features may be affected"
-    exit 1
-else
-    echo "✅ No SCP conflicts detected - deployment should succeed"
-    exit 0
-fi
-```
 
 ## Files Description
 
