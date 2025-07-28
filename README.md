@@ -1,2 +1,350 @@
-# aws-cspm-scp-analysis
+# CrowdStrike Falcon Cloud Security AWS SCP Analysis Tool
+
 This tool analyzes Service Control Policies (SCPs) in your AWS Organization to determine if they would prevent CrowdStrike Falcon Cloud Security from deploying successfully.
+
+## Overview
+
+CrowdStrike Falcon Cloud Security requires various AWS permissions to deploy successfully in your AWS Organzation. This script:
+
+1. **Fetches and analyzes** all Service Control Policies attached to your AWS account
+2. **Identifies conflicts** between SCPs and required permissions
+3. **Provides detailed reporting** on what might fail during deployment
+4. **Offers recommendations** for resolving permission conflicts
+
+## Required Permissions
+
+The script analyzes permissions for these AWS services:
+- **IAM**: Role creation and management
+- **CloudFormation**: Stack and StackSet operations
+- **Lambda**: Function creation for custom resources
+- **EventBridge**: Rule creation for real-time monitoring
+- **CloudTrail**: Trail management for logging
+- **S3**: Bucket operations for log storage
+- **Organizations**: Multi-account deployment
+- **EC2**: Region discovery
+- **STS**: Cross-account role assumption
+
+## Installation
+
+1. **Install Python dependencies:**
+```bash
+pip install -r requirements.txt
+```
+
+2. **Configure AWS credentials:**
+```bash
+# Option 1: Using AWS CLI
+aws configure
+
+# Option 2: Using environment variables
+export AWS_ACCESS_KEY_ID=your_access_key
+export AWS_SECRET_ACCESS_KEY=your_secret_key
+export AWS_DEFAULT_REGION=us-east-1
+
+# Option 3: Using AWS profiles
+aws configure --profile your-profile-name
+```
+
+## Usage
+
+### Basic Usage
+```bash
+python analyze_scp_crowdstrike.py
+```
+*Note: The script automatically fetches the latest CrowdStrike template from the official S3 URL*
+
+### Advanced Usage
+```bash
+# Write results to JSON file for analysis and automation
+python analyze_scp_crowdstrike.py --output-file
+
+# Use specific AWS profile
+python analyze_scp_crowdstrike.py --profile production
+
+# Use local template file instead of fetching latest from URL
+python analyze_scp_crowdstrike.py --template-file /path/to/template.yaml
+
+# Get JSON output for automation
+python analyze_scp_crowdstrike.py --output-format json
+
+# Get summary output
+python analyze_scp_crowdstrike.py --output-format summary
+```
+
+## Output Examples
+
+### ✅ No Conflicts Detected
+```
+🛡️  CROWDSTRIKE CLOUDFORMATION TEMPLATE - SCP ANALYSIS REPORT
+================================================================================
+
+📊 ACCOUNT INFORMATION:
+   Account ID: 123456789012
+   Region: us-east-1
+   Profile: default
+   Organization ID: o-abc1234567
+   Master Account: 123456789012
+   Feature Set: ALL
+
+📋 SCP ANALYSIS RESULTS:
+   Total Policies Analyzed: 2
+   Blocking Policies: 0
+   Severity: LOW
+
+💡 RECOMMENDATIONS:
+   ✅ No SCP conflicts detected. The CrowdStrike template should deploy successfully.
+```
+
+### ⚠️ Conflicts Detected
+```
+📋 SCP ANALYSIS RESULTS:
+   Total Policies Analyzed: 3
+   Blocking Policies: 1
+   Severity: HIGH
+
+🚫 BLOCKED ACTIONS BY SERVICE:
+   IAM:
+     - iam:CreateRole
+     - iam:AttachRolePolicy
+   CLOUDFORMATION:
+     - cloudformation:CreateStackSet
+   ...
+
+📜 BLOCKING POLICIES:
+   Policy: policy-name (p-efgh5678)
+   Description: 
+   Blocked Actions: 1
+     - cloudformation:CreateStackSet
+
+   Policy: ploicy-name (p-ijkl9012)
+   Description: 
+   Blocked Actions: 43
+     - cloudformation:GetTemplate
+     - cloudformation:DeleteStack
+     ...
+
+🌍 REGION RESTRICTIONS:
+   Policy: policy-name (p-abcd1234)
+   Attached to: OU
+     🚫 Blocks regions: ap-south-1 (StringEquals on aws:RequestedRegion)
+
+💡 RECOMMENDATIONS:
+   ⚠️  SCP conflicts detected that may prevent CrowdStrike template deployment.
+   🔴 CRITICAL: CloudFormation permissions are blocked. The template cannot deploy stacks. Add exceptions for CloudFormation operations on CrowdStrike resources.
+   🟡 MEDIUM: Lambda permissions are blocked. Custom resources may fail. Add exceptions for Lambda functions with CrowdStrike naming.
+   🟡 MEDIUM: EventBridge permissions are blocked. Real-time monitoring may fail. Add exceptions for EventBridge rules with 'cs-' prefix.
+   🔴 CRITICAL: Region restrictions detected that may prevent deployment.
+   💡 TIP: For multi-region CrowdStrike deployments, ensure all required regions are allowed. Real-time Visibility and DSPM features require deployment across multiple regions.
+```
+
+## Severity Levels
+
+- **🟢 LOW**: No conflicts detected - template should deploy successfully
+- **🟡 MEDIUM**: Minor conflicts that may affect optional features
+- **🔴 HIGH**: Critical conflicts that will prevent deployment
+
+## JSON Output File
+
+The script can write comprehensive analysis results to a JSON file for automation and programmatic analysis:
+
+```bash
+python analyze_scp_crowdstrike.py --output-file
+```
+
+**Auto-generated filename format:** `fcs_scp_analysis_{organization_id}.json`
+
+For example:
+- Organization `o-abc1234567` → `fcs_scp_analysis_o-abc1234567.json`
+- Standalone account `123456789012` → `fcs_scp_analysis_123456789012.json`
+
+### JSON Structure
+The JSON output file contains:
+- **Account Information**: Account ID, region, organization details
+- **Analysis Results**: Complete policy analysis with blocked actions and restrictions
+- **Service Breakdown**: Per-service analysis with blocked action counts
+- **Summary Statistics**: Total policies, severity, blocked services count
+- **Policy Details**: Full policy content and metadata for each blocking policy
+
+### Example JSON Output
+```json
+{
+  "account_information": {
+    "account_id": "123456789012",
+    "region": "us-east-1",
+    "organization": {
+      "id": "o-abc1234567",
+      "master_account_id": "123456789012"
+    }
+  },
+  "analysis_results": {
+    "total_policies": 3,
+    "severity": "HIGH",
+    "blocking_policies": [
+      {
+        "policy": {
+          "id": "p-abcd1234",
+          "name": "policy-name",
+          "description": "",
+          "content": {
+            "Version": "2012-10-17",
+            "Statement": [ "Statement Details..." ]
+          },
+          "attached_to": "Root",
+          "target_id": "r-abcd",
+          "target_name": "Root"
+        }
+      }
+    ]
+    "blocked_actions": {
+      "iam": ["iam:CreateRole", "iam:AttachRolePolicy"],
+      "cloudformation": ["cloudformation:CreateStack"]
+    }
+  },
+  "service_breakdown": {
+    "iam": {
+      "total_actions": 16,
+      "blocked_actions": 2,
+      "status": "BLOCKED"
+    }
+  },
+  "summary": {
+    "severity": "HIGH",
+    "total_policies": 3,
+    "blocked_services_count": 2
+  }
+}
+```
+
+## Exit Codes
+
+The script returns different exit codes for automation:
+- `0`: No issues (LOW severity)
+- `1`: Minor issues (MEDIUM severity)  
+- `2`: Critical issues (HIGH severity)
+
+## Common SCP Patterns That Block Deployment
+
+### 1. IAM Role Naming Pattern Requirements
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Deny",
+      "Action": [
+        "iam:CreateRole",
+        "iam:PutRolePolicy",
+        "iam:AttachRolePolicy"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringNotLike": {
+          "aws:RequestedResourceName": "CompanyPrefix-*"
+        }
+      }
+    }
+  ]
+}
+```
+**Impact**: This policy requires all IAM roles to start with "CompanyPrefix-" but CrowdStrike creates roles with names like "CrowdStrikeCSPMRole". This will block CrowdStrike deployment entirely unless you add the "CompanyPrefix-" to the ResourcePrefix parameter in the CrowdStrike template.
+
+
+### 2. Region Restrictions
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Deny",
+      "Action": "cloudformation:*",
+      "Resource": "*",
+      "Condition": {
+        "StringNotEquals": {
+          "aws:RequestedRegion": [
+            "us-east-1",
+            "us-west-2"
+          ]
+        }
+      }
+    }
+  ]
+}
+```
+**Impact**: This policy restricts all Cloudformation operations to only us-east-1 and us-west-2 regions. CrowdStrike's Real-time Visibility and DSPM features require deployment across all active regions.
+
+
+
+## Recommended SCP Exceptions
+
+To allow CrowdStrike deployment, consider these SCP exception patterns:
+
+### IAM Exception
+```json
+{
+  "Effect": "Allow",
+  "Action": [
+    "iam:CreateRole",
+    "iam:AttachRolePolicy",
+    "iam:PutRolePolicy",
+    "iam:PassRole"
+  ],
+  "Resource": [
+    "arn:aws:iam::*:role/CrowdStrike*",
+    "arn:aws:iam::*:policy/CrowdStrike*"
+  ]
+}
+```
+
+### CloudFormation Exception
+```json
+{
+  "Effect": "Allow", 
+  "Action": "cloudformation:*",
+  "Resource": [
+    "arn:aws:cloudformation:*:*:stack/CrowdStrike*",
+    "arn:aws:cloudformation:*:*:stackset/CrowdStrike*"
+  ]
+}
+```
+
+### EventBridge Exception
+```json
+{
+  "Effect": "Allow",
+  "Action": "events:*", 
+  "Resource": "arn:aws:events:*:*:rule/cs-*"
+}
+```
+
+## Troubleshooting
+
+### No Credentials Error
+```bash
+❌ Error: No AWS credentials configured. Please configure your credentials.
+```
+**Solution**: Configure AWS credentials using `aws configure` or environment variables.
+
+### Permission Denied for Organizations
+```bash
+Error getting organization info: AccessDenied
+```
+**Solution**: Ensure your user/role has `organizations:DescribeOrganization` permission.
+
+### Account Not in Organization
+```bash
+⚠️  Account is not part of an organization. SCPs may not apply.
+```
+**Note**: This is normal for standalone accounts. SCPs only apply to accounts in AWS Organizations.
+
+## Files Description
+
+- **`analyze_scp_crowdstrike.py`**: Main analysis script
+- **`requirements.txt`**: Python dependencies
+- **`README.md`**: This documentation
+
+## Support
+
+For issues related to:
+- **Script functionality**: Check this repository's issues
+- **CrowdStrike template**: Contact CrowdStrike support  
+- **AWS Organizations/SCPs**: Consult AWS documentation
