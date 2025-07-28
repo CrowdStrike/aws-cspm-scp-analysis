@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# pylint: disable=C0301,C0302,E0401,R1702,R0911,R0912,R0903,R0904,R0914,W0621,W0404,C0415,W0718
 """
 CrowdStrike CloudFormation Template SCP Analysis Tool
 
@@ -43,7 +44,7 @@ class SCPAnalyzer:
                 'sts:GetCallerIdentity'
             ]
         }
-        
+
         # Will be populated from template analysis
         self.template_permissions = {}
 
@@ -217,19 +218,17 @@ class SCPAnalyzer:
                     if parent_type == 'ROOT':
                         targets.append((parent_id, "Root"))
                         break
-                    elif parent_type == 'ORGANIZATIONAL_UNIT':
+                    if parent_type == 'ORGANIZATIONAL_UNIT':
                         targets.append((parent_id, "OU"))
                         current_parent_id = parent_id
                         depth += 1
-                    else:
-                        break
+                    break
 
                 except ClientError as e:
                     if e.response['Error']['Code'] == 'ParentNotFoundException':
                         break
-                    else:
-                        print(f"   ❌ Error getting parent for {current_parent_id}: {e}")
-                        break
+                    print(f"   ❌ Error getting parent for {current_parent_id}: {e}")
+                    break
 
         except Exception as e:
             print(f"Error building account hierarchy: {e}")
@@ -388,23 +387,23 @@ class SCPAnalyzer:
             # For Deny statements, logic is reversed
             if condition_operator in ['StringEquals', 'ForAllValues:StringEquals', 'ForAnyValue:StringEquals']:
                 return 'blocked_regions'  # Deny when region equals X = blocks region X
-            elif condition_operator in ['StringNotEquals', 'ForAllValues:StringNotEquals',
+            if condition_operator in ['StringNotEquals', 'ForAllValues:StringNotEquals',
                                         'ForAnyValue:StringNotEquals']:
                 return 'allowed_regions'  # Deny when region NOT equals X = allows only region X
-            elif condition_operator in ['StringLike', 'ForAllValues:StringLike', 'ForAnyValue:StringLike']:
+            if condition_operator in ['StringLike', 'ForAllValues:StringLike', 'ForAnyValue:StringLike']:
                 return 'blocked_regions_pattern'  # Deny when region like X = blocks regions matching X
-            elif condition_operator in ['StringNotLike', 'ForAllValues:StringNotLike', 'ForAnyValue:StringNotLike']:
+            if condition_operator in ['StringNotLike', 'ForAllValues:StringNotLike', 'ForAnyValue:StringNotLike']:
                 return 'allowed_regions_pattern'  # Deny when region NOT like X = allows only regions matching X
         else:
             # For Allow statements, logic is normal
             if condition_operator in ['StringEquals', 'ForAllValues:StringEquals', 'ForAnyValue:StringEquals']:
                 return 'allowed_regions'
-            elif condition_operator in ['StringNotEquals', 'ForAllValues:StringNotEquals',
+            if condition_operator in ['StringNotEquals', 'ForAllValues:StringNotEquals',
                                         'ForAnyValue:StringNotEquals']:
                 return 'blocked_regions'
-            elif condition_operator in ['StringLike', 'ForAllValues:StringLike', 'ForAnyValue:StringLike']:
+            if condition_operator in ['StringLike', 'ForAllValues:StringLike', 'ForAnyValue:StringLike']:
                 return 'allowed_regions_pattern'
-            elif condition_operator in ['StringNotLike', 'ForAllValues:StringNotLike', 'ForAnyValue:StringNotLike']:
+            if condition_operator in ['StringNotLike', 'ForAllValues:StringNotLike', 'ForAnyValue:StringNotLike']:
                 return 'blocked_regions_pattern'
         return None
 
@@ -419,14 +418,13 @@ class SCPAnalyzer:
 
         if restriction_type == 'allowed_regions':
             return f"Only allows regions: {values_str} ({operator} on {key})"
-        elif restriction_type == 'blocked_regions':
+        if restriction_type == 'blocked_regions':
             return f"Blocks regions: {values_str} ({operator} on {key})"
-        elif restriction_type == 'allowed_regions_pattern':
+        if restriction_type == 'allowed_regions_pattern':
             return f"Only allows regions matching pattern: {values_str} ({operator} on {key})"
-        elif restriction_type == 'blocked_regions_pattern':
+        if restriction_type == 'blocked_regions_pattern':
             return f"Blocks regions matching pattern: {values_str} ({operator} on {key})"
-        else:
-            return f"Region restriction: {operator} on {key} with values {values_str}"
+        return f"Region restriction: {operator} on {key} with values {values_str}"
 
     def analyze_policies(self, policies: List[Dict]) -> Dict:
         """Analyze all policies for potential conflicts"""
@@ -575,16 +573,16 @@ class SCPAnalyzer:
         try:
             # Create a custom YAML loader that can handle CloudFormation intrinsic functions
             class CloudFormationLoader(yaml.SafeLoader):
-                pass
+                """Custom YAML loader for CloudFormation templates with intrinsic function support"""
 
             # Add constructors for CloudFormation intrinsic functions
             def construct_cloudformation_tag(loader, tag_suffix, node):
                 """Generic constructor for CloudFormation intrinsic functions"""
                 if isinstance(node, yaml.ScalarNode):
                     return {'Fn::' + tag_suffix: loader.construct_scalar(node)}
-                elif isinstance(node, yaml.SequenceNode):
+                if isinstance(node, yaml.SequenceNode):
                     return {'Fn::' + tag_suffix: loader.construct_sequence(node)}
-                elif isinstance(node, yaml.MappingNode):
+                if isinstance(node, yaml.MappingNode):
                     return {'Fn::' + tag_suffix: loader.construct_mapping(node)}
                 return {'Fn::' + tag_suffix: None}
 
@@ -656,10 +654,10 @@ class SCPAnalyzer:
         """Extract actual AWS permissions required from CloudFormation template and all child templates"""
         try:
             print("🔍 Parsing CloudFormation template to extract required permissions...")
-            
+
             # Parse all templates recursively (main + child templates)
             all_permissions = self.extract_permissions_recursive(template_content, base_url, set())
-            
+
             return all_permissions
 
         except Exception as e:
@@ -667,33 +665,33 @@ class SCPAnalyzer:
             print("   Cannot analyze SCPs without template permissions.")
             return None
 
-    def extract_permissions_recursive(self, template_content: str, base_url: str = None, 
+    def extract_permissions_recursive(self, template_content: str, base_url: str = None,
                                     processed_urls: set = None) -> Dict[str, List[str]]:
         """Recursively extract permissions from template and all child templates"""
         if processed_urls is None:
             processed_urls = set()
-        
+
         # Parse the current template
         template = self.parse_cloudformation_template(template_content)
         if not template:
             return {}
-        
+
         # CloudFormation resource types to required AWS permissions mapping
         cf_resource_permissions = {
-            'AWS::IAM::Role': ['iam:CreateRole', 'iam:GetRole', 'iam:DeleteRole', 'iam:UpdateRole', 
-                              'iam:PutRolePolicy', 'iam:AttachRolePolicy', 'iam:DetachRolePolicy', 
+            'AWS::IAM::Role': ['iam:CreateRole', 'iam:GetRole', 'iam:DeleteRole', 'iam:UpdateRole',
+                              'iam:PutRolePolicy', 'iam:AttachRolePolicy', 'iam:DetachRolePolicy',
                               'iam:PassRole', 'iam:TagRole', 'iam:UntagRole'],
-            'AWS::IAM::Policy': ['iam:CreatePolicy', 'iam:GetPolicy', 'iam:DeletePolicy', 
+            'AWS::IAM::Policy': ['iam:CreatePolicy', 'iam:GetPolicy', 'iam:DeletePolicy',
                                 'iam:CreatePolicyVersion', 'iam:DeletePolicyVersion', 'iam:AttachRolePolicy'],
-            'AWS::IAM::InstanceProfile': ['iam:CreateInstanceProfile', 'iam:DeleteInstanceProfile', 
+            'AWS::IAM::InstanceProfile': ['iam:CreateInstanceProfile', 'iam:DeleteInstanceProfile',
                                         'iam:AddRoleToInstanceProfile', 'iam:RemoveRoleFromInstanceProfile'],
             'AWS::Lambda::Function': ['lambda:CreateFunction', 'lambda:DeleteFunction', 'lambda:UpdateFunctionCode',
                                      'lambda:UpdateFunctionConfiguration', 'lambda:GetFunction', 'lambda:TagResource'],
-            'AWS::Events::Rule': ['events:PutRule', 'events:DeleteRule', 'events:PutTargets', 
+            'AWS::Events::Rule': ['events:PutRule', 'events:DeleteRule', 'events:PutTargets',
                                  'events:RemoveTargets', 'events:DescribeRule'],
-            'AWS::CloudTrail::Trail': ['cloudtrail:CreateTrail', 'cloudtrail:DeleteTrail', 
+            'AWS::CloudTrail::Trail': ['cloudtrail:CreateTrail', 'cloudtrail:DeleteTrail',
                                       'cloudtrail:UpdateTrail', 'cloudtrail:StartLogging', 'cloudtrail:StopLogging'],
-            'AWS::S3::Bucket': ['s3:CreateBucket', 's3:DeleteBucket', 's3:PutBucketPolicy', 
+            'AWS::S3::Bucket': ['s3:CreateBucket', 's3:DeleteBucket', 's3:PutBucketPolicy',
                                's3:PutBucketAcl', 's3:GetBucketLocation'],
             'AWS::CloudFormation::Stack': ['cloudformation:CreateStack', 'cloudformation:UpdateStack',
                                           'cloudformation:DeleteStack', 'cloudformation:DescribeStacks'],
@@ -713,20 +711,20 @@ class SCPAnalyzer:
         # Extract permissions from current template
         extracted_permissions = {}
         resources = template.get('Resources', {})
-        
+
         print(f"   📄 Analyzing template with {len(resources)} resources...")
-        
+
         # Extract child template URLs
         child_template_urls = self.extract_child_template_urls(resources, base_url)
-        
+
         # Process resources in current template
-        for resource_name, resource_config in resources.items():
+        for _, resource_config in resources.items():
             resource_type = resource_config.get('Type', '')
-            
+
             if resource_type in cf_resource_permissions:
                 required_perms = cf_resource_permissions[resource_type]
-                print(f"     📋 {resource_name} ({resource_type}): {len(required_perms)} permissions")
-                
+                print(f"     📋 Resource ({resource_type}): {len(required_perms)} permissions")
+
                 for perm in required_perms:
                     service = perm.split(':')[0]
                     if service not in extracted_permissions:
@@ -746,19 +744,19 @@ class SCPAnalyzer:
         # Recursively process child templates
         if child_template_urls:
             print(f"   🔗 Found {len(child_template_urls)} child templates to process...")
-        
+
         for child_url in child_template_urls:
             if child_url not in processed_urls:
                 processed_urls.add(child_url)
                 print(f"   📥 Fetching child template: {child_url}")
-                
+
                 child_content = self.fetch_template_from_url(child_url)
                 if child_content:
                     print(f"     ✅ Child template fetched ({len(child_content)} characters)")
                     child_permissions = self.extract_permissions_recursive(
                         child_content, child_url, processed_urls
                     )
-                    
+
                     # Merge child permissions with current permissions
                     for service, perms in child_permissions.items():
                         if service not in extracted_permissions:
@@ -777,7 +775,7 @@ class SCPAnalyzer:
             'ec2': ['ec2:DescribeRegions'],
             'organizations': ['organizations:DescribeOrganization', 'organizations:ListAccounts']
         }
-        
+
         for service, perms in essential_permissions.items():
             if service not in extracted_permissions:
                 extracted_permissions[service] = []
@@ -786,22 +784,22 @@ class SCPAnalyzer:
                     extracted_permissions[service].append(perm)
 
         # Sort permissions for consistency
-        for service in extracted_permissions:
-            extracted_permissions[service].sort()
+        for service, permissions in extracted_permissions.items():
+            permissions.sort()
 
         return extracted_permissions
 
     def extract_child_template_urls(self, resources: Dict, base_url: str = None) -> List[str]:
         """Extract TemplateURL properties from CloudFormation Stack and StackSet resources"""
         child_urls = []
-        
+
         for resource_name, resource_config in resources.items():
             resource_type = resource_config.get('Type', '')
-            
+
             if resource_type in ['AWS::CloudFormation::Stack', 'AWS::CloudFormation::StackSet']:
                 properties = resource_config.get('Properties', {})
                 template_url = properties.get('TemplateURL')
-                
+
                 if template_url:
                     # Handle CloudFormation intrinsic functions
                     if isinstance(template_url, dict):
@@ -825,14 +823,14 @@ class SCPAnalyzer:
                         else:
                             print(f"     ⚠️  Skipping complex intrinsic function in TemplateURL for {resource_name}")
                             continue
-                    
+
                     if isinstance(template_url, str):
                         # Resolve relative URLs
                         resolved_url = self.resolve_template_url(template_url, base_url)
                         if resolved_url:
                             child_urls.append(resolved_url)
                             print(f"     🔗 Found child template: {resource_name} -> {resolved_url}")
-        
+
         return child_urls
 
     def resolve_template_url(self, template_url: str, base_url: str = None) -> str:
@@ -841,30 +839,29 @@ class SCPAnalyzer:
             # If it's already a full URL, return as-is
             if template_url.startswith('http://') or template_url.startswith('https://'):
                 return template_url
-            
+
             # If we have a base URL, construct the full URL
             if base_url:
                 from urllib.parse import urljoin, urlparse
-                
+
                 # Parse base URL
                 parsed_base = urlparse(base_url)
-                
+
                 # If template_url starts with '/', it's absolute path
                 if template_url.startswith('/'):
                     return f"{parsed_base.scheme}://{parsed_base.netloc}{template_url}"
-                
+
                 # Otherwise, it's relative to the base URL directory
                 base_dir = '/'.join(base_url.split('/')[:-1]) + '/'
                 return urljoin(base_dir, template_url)
-            
+
             # Default CrowdStrike base URL if no base_url provided
             default_base = 'https://cs-prod-cloudconnect-templates.s3-us-west-1.amazonaws.com/modular/'
-            
+
             if template_url.startswith('/'):
                 return f"https://cs-prod-cloudconnect-templates.s3-us-west-1.amazonaws.com{template_url}"
-            else:
-                return default_base + template_url
-                
+            return default_base + template_url
+
         except Exception as e:
             print(f"     ❌ Error resolving template URL '{template_url}': {e}")
             return None
@@ -872,14 +869,14 @@ class SCPAnalyzer:
     def extract_iam_policy_permissions(self, resources: Dict) -> Dict[str, List[str]]:
         """Extract permissions from IAM policies defined in the CloudFormation template"""
         policy_permissions = {}
-        
-        for resource_name, resource_config in resources.items():
+
+        for _, resource_config in resources.items():
             resource_type = resource_config.get('Type', '')
-            
+
             if resource_type == 'AWS::IAM::Role':
                 # Check AssumeRolePolicyDocument and inline policies
                 properties = resource_config.get('Properties', {})
-                
+
                 # Extract from inline policies
                 policies = properties.get('Policies', [])
                 for policy in policies:
@@ -909,23 +906,23 @@ class SCPAnalyzer:
     def extract_actions_from_policy_document(self, policy_doc: Dict) -> List[str]:
         """Extract AWS actions from an IAM policy document"""
         actions = []
-        
+
         statements = policy_doc.get('Statement', [])
         if not isinstance(statements, list):
             statements = [statements]
-            
+
         for statement in statements:
             # Only extract from Allow statements (Deny statements don't indicate required permissions)
             if statement.get('Effect') == 'Allow':
                 statement_actions = statement.get('Action', [])
                 if isinstance(statement_actions, str):
                     statement_actions = [statement_actions]
-                
+
                 for action in statement_actions:
                     # Skip wildcard actions and CloudFormation intrinsic functions
                     if isinstance(action, str) and ':' in action and not action.startswith('!'):
                         actions.append(action)
-        
+
         return actions
 
     def print_detailed_report(self, results: Dict, template_features: Dict = None):
@@ -1135,7 +1132,7 @@ class SCPAnalyzer:
             # Get template content and extract permissions
             template_content = None
             extracted_permissions = None
-            
+
             if template_file:
                 # Use provided template file
                 try:
