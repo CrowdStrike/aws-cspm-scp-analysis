@@ -224,45 +224,55 @@ The script returns different exit codes for automation:
 
 ## Common SCP Patterns That Block Deployment
 
-### 1. Blanket IAM Denies
+### 1. IAM Role Naming Pattern Requirements
 ```json
 {
-  "Effect": "Deny",
-  "Action": "iam:*",
-  "Resource": "*"
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Deny",
+      "Action": [
+        "iam:CreateRole",
+        "iam:PutRolePolicy",
+        "iam:AttachRolePolicy"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringNotLike": {
+          "aws:RequestedResourceName": "CompanyPrefix-*"
+        }
+      }
+    }
+  ]
 }
 ```
-**Impact**: Prevents all IAM operations, blocking role creation.
+**Impact**: This policy requires all IAM roles to start with "CompanyPrefix-" but CrowdStrike creates roles with names like "CrowdStrikeCSPMRole". This will block CrowdStrike deployment entirely unless you add the "CompanyPrefix-" to the ResourcePrefix parameter in the CrowdStrike template.
 
-### 2. CloudFormation Restrictions
-```json
-{
-  "Effect": "Deny", 
-  "Action": "cloudformation:*",
-  "Resource": "*"
-}
-```
-**Impact**: Prevents stack deployment entirely.
 
-### 3. Service-Specific Denies
+### 2. Region Restrictions
 ```json
 {
-  "Effect": "Deny",
-  "Action": ["lambda:*", "events:*"],
-  "Resource": "*"
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Deny",
+      "Action": "cloudformation:*",
+      "Resource": "*",
+      "Condition": {
+        "StringNotEquals": {
+          "aws:RequestedRegion": [
+            "us-east-1",
+            "us-west-2"
+          ]
+        }
+      }
+    }
+  ]
 }
 ```
-**Impact**: Blocks Lambda functions and EventBridge rules.
+**Impact**: This policy restricts all Cloudformation operations to only us-east-1 and us-west-2 regions. CrowdStrike's Real-time Visibility and DSPM features require deployment across all active regions.
 
-### 4. Resource Pattern Restrictions
-```json
-{
-  "Effect": "Deny",
-  "Action": "*",
-  "Resource": "arn:aws:iam::*:role/*"
-}
-```
-**Impact**: Blocks creation of IAM roles with any name pattern.
+
 
 ## Recommended SCP Exceptions
 

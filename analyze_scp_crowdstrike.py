@@ -605,7 +605,7 @@ class SCPAnalyzer:
                 if 'lambda' in results['blocked_actions']:
                     recommendations.append(
                         "🟡 MEDIUM: Lambda permissions are blocked. Custom resources may fail. "
-                        "Add exceptions for Lambda functions with CrowdStrike naming."
+                        "Consider adding an exception for CrowdStrike Lambda resources."
                     )
                 
                 if 'events' in results['blocked_actions']:
@@ -647,6 +647,10 @@ class SCPAnalyzer:
                                     f"Consider adding exceptions for CrowdStrike resources in these regions."
                                 )
                         
+                recommendations.append(
+                    "💡 TIP: When adding exceptions to naming restrictions for CrowdStrike IAM Roles and Lambda Functions: "
+                    "Use the ResourcePrefix and/or ResourceSuffix parameters in the template."
+                )
                 recommendations.append(
                     "💡 TIP: For multi-region CrowdStrike deployments, ensure all required regions are allowed. "
                     "Real-time Visibility and DSPM features require deployment across multiple regions."
