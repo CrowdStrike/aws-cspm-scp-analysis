@@ -388,7 +388,7 @@ class SCPAnalyzer:
             if condition_operator in ['StringEquals', 'ForAllValues:StringEquals', 'ForAnyValue:StringEquals']:
                 return 'blocked_regions'  # Deny when region equals X = blocks region X
             if condition_operator in ['StringNotEquals', 'ForAllValues:StringNotEquals',
-                                        'ForAnyValue:StringNotEquals']:
+                                      'ForAnyValue:StringNotEquals']:
                 return 'allowed_regions'  # Deny when region NOT equals X = allows only region X
             if condition_operator in ['StringLike', 'ForAllValues:StringLike', 'ForAnyValue:StringLike']:
                 return 'blocked_regions_pattern'  # Deny when region like X = blocks regions matching X
@@ -399,7 +399,7 @@ class SCPAnalyzer:
             if condition_operator in ['StringEquals', 'ForAllValues:StringEquals', 'ForAnyValue:StringEquals']:
                 return 'allowed_regions'
             if condition_operator in ['StringNotEquals', 'ForAllValues:StringNotEquals',
-                                        'ForAnyValue:StringNotEquals']:
+                                      'ForAnyValue:StringNotEquals']:
                 return 'blocked_regions'
             if condition_operator in ['StringLike', 'ForAllValues:StringLike', 'ForAnyValue:StringLike']:
                 return 'allowed_regions_pattern'
@@ -666,7 +666,7 @@ class SCPAnalyzer:
             return None
 
     def extract_permissions_recursive(self, template_content: str, base_url: str = None,
-                                    processed_urls: set = None) -> Dict[str, List[str]]:
+                                      processed_urls: set = None) -> Dict[str, List[str]]:
         """Recursively extract permissions from template and all child templates"""
         if processed_urls is None:
             processed_urls = set()
@@ -679,32 +679,33 @@ class SCPAnalyzer:
         # CloudFormation resource types to required AWS permissions mapping
         cf_resource_permissions = {
             'AWS::IAM::Role': ['iam:CreateRole', 'iam:GetRole', 'iam:DeleteRole', 'iam:UpdateRole',
-                              'iam:PutRolePolicy', 'iam:AttachRolePolicy', 'iam:DetachRolePolicy',
-                              'iam:PassRole', 'iam:TagRole', 'iam:UntagRole'],
+                               'iam:PutRolePolicy', 'iam:AttachRolePolicy', 'iam:DetachRolePolicy',
+                               'iam:PassRole', 'iam:TagRole', 'iam:UntagRole'],
             'AWS::IAM::Policy': ['iam:CreatePolicy', 'iam:GetPolicy', 'iam:DeletePolicy',
-                                'iam:CreatePolicyVersion', 'iam:DeletePolicyVersion', 'iam:AttachRolePolicy'],
+                                 'iam:CreatePolicyVersion', 'iam:DeletePolicyVersion', 'iam:AttachRolePolicy'],
             'AWS::IAM::InstanceProfile': ['iam:CreateInstanceProfile', 'iam:DeleteInstanceProfile',
-                                        'iam:AddRoleToInstanceProfile', 'iam:RemoveRoleFromInstanceProfile'],
+                                          'iam:AddRoleToInstanceProfile', 'iam:RemoveRoleFromInstanceProfile'],
             'AWS::Lambda::Function': ['lambda:CreateFunction', 'lambda:DeleteFunction', 'lambda:UpdateFunctionCode',
-                                     'lambda:UpdateFunctionConfiguration', 'lambda:GetFunction', 'lambda:TagResource'],
+                                      'lambda:UpdateFunctionConfiguration', 'lambda:GetFunction', 'lambda:TagResource'],
             'AWS::Events::Rule': ['events:PutRule', 'events:DeleteRule', 'events:PutTargets',
-                                 'events:RemoveTargets', 'events:DescribeRule'],
+                                  'events:RemoveTargets', 'events:DescribeRule'],
             'AWS::CloudTrail::Trail': ['cloudtrail:CreateTrail', 'cloudtrail:DeleteTrail',
-                                      'cloudtrail:UpdateTrail', 'cloudtrail:StartLogging', 'cloudtrail:StopLogging'],
+                                       'cloudtrail:UpdateTrail', 'cloudtrail:StartLogging', 'cloudtrail:StopLogging'],
             'AWS::S3::Bucket': ['s3:CreateBucket', 's3:DeleteBucket', 's3:PutBucketPolicy',
-                               's3:PutBucketAcl', 's3:GetBucketLocation'],
+                                's3:PutBucketAcl', 's3:GetBucketLocation'],
             'AWS::CloudFormation::Stack': ['cloudformation:CreateStack', 'cloudformation:UpdateStack',
-                                          'cloudformation:DeleteStack', 'cloudformation:DescribeStacks'],
+                                           'cloudformation:DeleteStack', 'cloudformation:DescribeStacks'],
             'AWS::CloudFormation::StackSet': ['cloudformation:CreateStackSet', 'cloudformation:UpdateStackSet',
-                                             'cloudformation:DeleteStackSet', 'cloudformation:CreateStackInstances',
-                                             'cloudformation:UpdateStackInstances', 'cloudformation:DeleteStackInstances'],
+                                              'cloudformation:DeleteStackSet', 'cloudformation:CreateStackInstances',
+                                              'cloudformation:UpdateStackInstances', 'cloudformation:DeleteStackInstances'],
             'AWS::Lambda::Permission': ['lambda:AddPermission', 'lambda:RemovePermission'],
             'AWS::Events::Permission': ['events:PutPermission', 'events:RemovePermission'],
             'AWS::Logs::LogGroup': ['logs:CreateLogGroup', 'logs:DeleteLogGroup', 'logs:PutRetentionPolicy'],
             'AWS::SNS::Topic': ['sns:CreateTopic', 'sns:DeleteTopic', 'sns:SetTopicAttributes'],
             'AWS::SQS::Queue': ['sqs:CreateQueue', 'sqs:DeleteQueue', 'sqs:SetQueueAttributes'],
             'AWS::KMS::Key': ['kms:CreateKey', 'kms:DeleteKey', 'kms:PutKeyPolicy'],
-            'AWS::EC2::SecurityGroup': ['ec2:CreateSecurityGroup', 'ec2:DeleteSecurityGroup', 'ec2:AuthorizeSecurityGroupIngress'],
+            'AWS::EC2::SecurityGroup': ['ec2:CreateSecurityGroup', 'ec2:DeleteSecurityGroup',
+                                        'ec2:AuthorizeSecurityGroupIngress'],
             'AWS::SSM::Parameter': ['ssm:PutParameter', 'ssm:GetParameter', 'ssm:DeleteParameter']
         }
 
