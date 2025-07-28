@@ -660,11 +660,6 @@ class SCPAnalyzer:
             # Parse all templates recursively (main + child templates)
             all_permissions = self.extract_permissions_recursive(template_content, base_url, set())
             
-            if all_permissions:
-                print(f"\n✅ Final aggregated permissions for {len(all_permissions)} services:")
-                for service, perms in all_permissions.items():
-                    print(f"   {service.upper()}: {len(perms)} permissions")
-            
             return all_permissions
 
         except Exception as e:
@@ -1120,7 +1115,7 @@ class SCPAnalyzer:
         except Exception as e:
             print(f"❌ Error writing results to file: {e}")
 
-    def run_analysis(self, template_file: str = None) -> Dict:
+    def run_analysis(self, template_file: str = None) -> Tuple[Dict, Dict]:
         """Run the complete SCP analysis"""
         try:
             print("🔍 Starting SCP analysis for CrowdStrike template...")
@@ -1129,13 +1124,13 @@ class SCPAnalyzer:
             org_info = self.get_organization_info()
             if not org_info:
                 print("⚠️  Account is not part of an organization. SCPs may not apply.")
-                return {
+                return ({
                     'severity': 'LOW',
                     'recommendations': ['✅ Account is not part of an organization. No SCP restrictions apply.'],
                     'blocked_actions': {},
                     'total_policies': 0,
                     'blocking_policies': []
-                }
+                }, {})
 
             # Get template content and extract permissions
             template_content = None
@@ -1168,25 +1163,25 @@ class SCPAnalyzer:
             else:
                 print("❌ ERROR: Cannot analyze SCPs without template permissions.")
                 print("   Please ensure you have a valid CrowdStrike template file or URL access.")
-                return {
+                return ({
                     'severity': 'ERROR',
                     'recommendations': ['❌ Template analysis failed. Cannot determine required permissions.'],
                     'blocked_actions': {},
                     'total_policies': 0,
                     'blocking_policies': []
-                }
+                }, {})
 
             # Get all organization policies
             policies = self.get_all_organization_policies()
             if not policies:
                 print("ℹ️  No Service Control Policies found in the organization.")
-                return {
+                return ({
                     'severity': 'LOW',
                     'recommendations': ['✅ No Service Control Policies found in the organization.'],
                     'blocked_actions': {},
                     'total_policies': 0,
                     'blocking_policies': []
-                }
+                }, {})
 
             # Analyze policies (now using extracted permissions)
             results = self.analyze_policies(policies)
@@ -1199,7 +1194,7 @@ class SCPAnalyzer:
             # Print detailed report
             self.print_detailed_report(results, template_features)
 
-            return results
+            return (results, template_features)
 
         except NoCredentialsError:
             print("❌ Error: No AWS credentials configured. Please configure your credentials.")
@@ -1227,56 +1222,17 @@ def main():
         '--template-file',
         help='Path to CrowdStrike CloudFormation template file (default: fetch from URL)'
     )
-    parser.add_argument(
-        '--output-format',
-        choices=['detailed', 'summary', 'json'],
-        default='detailed',
-        help='Output format (default: detailed)'
-    )
-    parser.add_argument(
-        '--output-file',
-        action='store_true',
-        help='Write results to JSON file (filename: fcs_scp_analysis_{organization_id}.json)'
-    )
 
     args = parser.parse_args()
 
     # Initialize analyzer
     analyzer = SCPAnalyzer(profile=args.profile, region=args.region)
 
-    # Run analysis (we need to modify this to return both results and template_features)
-    results = analyzer.run_analysis(template_file=args.template_file)
+    # Run analysis (returns both results and template_features)
+    results, template_features = analyzer.run_analysis(template_file=args.template_file)
 
-    # Get template features for file output
-    template_features = None
-    if args.output_file:
-        try:
-            if args.template_file:
-                with open(args.template_file, 'r') as f:
-                    template_content = f.read()
-                template_features = analyzer.analyze_template_features(template_content)
-            else:
-                template_content = analyzer.fetch_template_from_url(analyzer.DEFAULT_TEMPLATE_URL)
-                if template_content:
-                    template_features = analyzer.analyze_template_features(template_content)
-        except Exception as e:
-            print(f"Warning: Could not analyze template features for file output: {e}")
-
-    # Output results based on format
-    if args.output_format == 'json':
-        print(json.dumps(results, indent=2))
-    elif args.output_format == 'summary':
-        print(f"Severity: {results['severity']}")
-        print(f"Blocked Services: {len(results['blocked_actions'])}")
-        print(f"Total Policies: {results['total_policies']}")
-        if results['blocked_actions']:
-            print("Blocked Actions:")
-            for service, actions in results['blocked_actions'].items():
-                print(f"  {service}: {len(actions)} actions")
-
-    # Write results to file if requested
-    if args.output_file:
-        analyzer.write_results_to_file(results, template_features)
+    # Always write results to JSON file
+    analyzer.write_results_to_file(results, template_features)
 
     # Exit with appropriate code
     if results['severity'] == 'HIGH':

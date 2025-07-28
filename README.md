@@ -55,20 +55,11 @@ python analyze_scp_crowdstrike.py
 
 ### Advanced Usage
 ```bash
-# Write results to JSON file for analysis and automation
-python analyze_scp_crowdstrike.py --output-file
-
 # Use specific AWS profile
 python analyze_scp_crowdstrike.py --profile production
 
 # Use local template file instead of fetching latest from URL
 python analyze_scp_crowdstrike.py --template-file /path/to/template.yaml
-
-# Get JSON output for automation
-python analyze_scp_crowdstrike.py --output-format json
-
-# Get summary output
-python analyze_scp_crowdstrike.py --output-format summary
 ```
 
 ## Output Examples
@@ -101,14 +92,6 @@ python analyze_scp_crowdstrike.py --output-format summary
    Total Policies Analyzed: 3
    Blocking Policies: 1
    Severity: HIGH
-
-🚫 BLOCKED ACTIONS BY SERVICE:
-   IAM:
-     - iam:CreateRole
-     - iam:AttachRolePolicy
-   CLOUDFORMATION:
-     - cloudformation:CreateStackSet
-   ...
 
 📜 BLOCKING POLICIES:
    Policy: policy-name (p-efgh5678)
@@ -145,11 +128,7 @@ python analyze_scp_crowdstrike.py --output-format summary
 
 ## JSON Output File
 
-The script can write comprehensive analysis results to a JSON file for automation and programmatic analysis:
-
-```bash
-python analyze_scp_crowdstrike.py --output-file
-```
+The script will write comprehensive analysis results to a JSON file for automation and programmatic analysis:
 
 **Auto-generated filename format:** `fcs_scp_analysis_{organization_id}.json`
 
