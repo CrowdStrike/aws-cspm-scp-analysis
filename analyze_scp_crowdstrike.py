@@ -965,13 +965,6 @@ class SCPAnalyzer:
         print(f"   Blocking Policies: {len(results['blocking_policies'])}")
         print(f"   Severity: {results['severity']}")
 
-        if results['blocked_actions']:
-            print("\n🚫 BLOCKED ACTIONS BY SERVICE:")
-            for service, actions in results['blocked_actions'].items():
-                print(f"   {service.upper()}:")
-                for action in actions:
-                    print(f"     - {action}")
-
         if results['blocking_policies']:
             print("\n📜 BLOCKING POLICIES:")
             for policy_info in results['blocking_policies']:
@@ -999,15 +992,6 @@ class SCPAnalyzer:
         print("\n💡 RECOMMENDATIONS:")
         for recommendation in results['recommendations']:
             print(f"   {recommendation}")
-
-        print("\n🔍 DETAILED ACTIONS ANALYSIS:")
-        print(f"   Total Required Actions: {sum(len(actions) for actions in self.template_permissions.values())}")
-
-        for service, actions in self.template_permissions.items():
-            blocked_count = len(results['blocked_actions'].get(service, []))
-            total_count = len(actions)
-            status = "🔴 BLOCKED" if blocked_count > 0 else "✅ ALLOWED"
-            print(f"   {service.upper()}: {status} ({blocked_count}/{total_count} blocked)")
 
         print("\n" + "=" * 80)
 
@@ -1044,13 +1028,6 @@ class SCPAnalyzer:
         lines.append(f"   Blocking Policies: {len(results['blocking_policies'])}")
         lines.append(f"   Severity: {results['severity']}")
 
-        if results['blocked_actions']:
-            lines.append("\n🚫 BLOCKED ACTIONS BY SERVICE:")
-            for service, actions in results['blocked_actions'].items():
-                lines.append(f"   {service.upper()}:")
-                for action in actions:
-                    lines.append(f"     - {action}")
-
         if results['blocking_policies']:
             lines.append("\n📜 BLOCKING POLICIES:")
             for policy_info in results['blocking_policies']:
@@ -1078,15 +1055,6 @@ class SCPAnalyzer:
         lines.append("\n💡 RECOMMENDATIONS:")
         for recommendation in results['recommendations']:
             lines.append(f"   {recommendation}")
-
-        lines.append("\n🔍 DETAILED ACTIONS ANALYSIS:")
-        lines.append(f"   Total Required Actions: {sum(len(actions) for actions in self.template_permissions.values())}")
-
-        for service, actions in self.template_permissions.items():
-            blocked_count = len(results['blocked_actions'].get(service, []))
-            total_count = len(actions)
-            status = "🔴 BLOCKED" if blocked_count > 0 else "✅ ALLOWED"
-            lines.append(f"   {service.upper()}: {status} ({blocked_count}/{total_count} blocked)")
 
         lines.append("\n" + "=" * 80)
 
