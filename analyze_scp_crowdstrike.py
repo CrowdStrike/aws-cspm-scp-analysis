@@ -32,111 +32,20 @@ class SCPAnalyzer:
         self.region = region
         self.session = boto3.Session(profile_name=profile) if profile else boto3.Session()
 
-        # Required AWS permissions for CrowdStrike template
-        self.required_permissions = {
-            'iam': [
-                'iam:CreateRole',
-                'iam:AttachRolePolicy',
-                'iam:DetachRolePolicy',
-                'iam:PutRolePolicy',
-                'iam:DeleteRolePolicy',
-                'iam:PassRole',
-                'iam:GetRole',
-                'iam:ListRoles',
-                'iam:UpdateRole',
-                'iam:DeleteRole',
-                'iam:TagRole',
-                'iam:UntagRole',
-                'iam:GetRolePolicy',
-                'iam:ListRolePolicies',
-                'iam:ListAttachedRolePolicies',
-                'iam:UpdateAssumeRolePolicy'
-            ],
-            'lambda': [
-                'lambda:CreateFunction',
-                'lambda:DeleteFunction',
-                'lambda:GetFunction',
-                'lambda:UpdateFunctionCode',
-                'lambda:UpdateFunctionConfiguration',
-                'lambda:InvokeFunction',
-                'lambda:TagResource',
-                'lambda:UntagResource',
-                'lambda:ListTags'
-            ],
+        # Essential permissions required for any CloudFormation deployment
+        # These are minimal permissions needed regardless of template content
+        self.essential_permissions = {
             'cloudformation': [
-                'cloudformation:CreateStack',
-                'cloudformation:UpdateStack',
-                'cloudformation:DeleteStack',
                 'cloudformation:DescribeStacks',
-                'cloudformation:DescribeStackResources',
-                'cloudformation:DescribeStackEvents',
-                'cloudformation:GetTemplate',
-                'cloudformation:ValidateTemplate',
-                'cloudformation:CreateStackSet',
-                'cloudformation:UpdateStackSet',
-                'cloudformation:DeleteStackSet',
-                'cloudformation:DescribeStackSet',
-                'cloudformation:DescribeStackSetOperation',
-                'cloudformation:CreateStackInstances',
-                'cloudformation:UpdateStackInstances',
-                'cloudformation:DeleteStackInstances',
-                'cloudformation:ListStackSets',
-                'cloudformation:ListStackInstances',
-                'cloudformation:StopStackSetOperation',
-                'cloudformation:DetectStackSetDrift',
-                'cloudformation:DescribeStackInstance'
-            ],
-            'ec2': [
-                'ec2:DescribeRegions'
-            ],
-            'events': [
-                'events:PutRule',
-                'events:DeleteRule',
-                'events:DescribeRule',
-                'events:PutTargets',
-                'events:RemoveTargets',
-                'events:EnableRule',
-                'events:DisableRule',
-                'events:ListRules',
-                'events:ListTargetsByRule',
-                'events:TagResource',
-                'events:UntagResource'
-            ],
-            'cloudtrail': [
-                'cloudtrail:CreateTrail',
-                'cloudtrail:DeleteTrail',
-                'cloudtrail:DescribeTrails',
-                'cloudtrail:GetTrailStatus',
-                'cloudtrail:StartLogging',
-                'cloudtrail:StopLogging',
-                'cloudtrail:UpdateTrail',
-                'cloudtrail:PutEventSelectors',
-                'cloudtrail:GetEventSelectors'
-            ],
-            's3': [
-                's3:GetObject',
-                's3:PutObject',
-                's3:DeleteObject',
-                's3:GetBucketLocation',
-                's3:GetBucketAcl',
-                's3:PutBucketAcl',
-                's3:GetBucketPolicy',
-                's3:PutBucketPolicy',
-                's3:ListBucket'
-            ],
-            'organizations': [
-                'organizations:DescribeOrganization',
-                'organizations:ListRoots',
-                'organizations:ListOrganizationalUnitsForParent',
-                'organizations:ListAccounts',
-                'organizations:ListAccountsForParent',
-                'organizations:DescribeAccount'
+                'cloudformation:GetTemplate'
             ],
             'sts': [
-                'sts:AssumeRole',
                 'sts:GetCallerIdentity'
             ]
         }
+        
+        # Will be populated from template analysis
+        self.template_permissions = {}
 
         # Critical resource patterns that must be allowed
         self.critical_resource_patterns = [
@@ -531,7 +440,7 @@ class SCPAnalyzer:
         }
 
         all_required_actions = []
-        for service, actions in self.required_permissions.items():
+        for service, actions in self.template_permissions.items():
             all_required_actions.extend(actions)
 
         for policy in policies:
@@ -661,10 +570,56 @@ class SCPAnalyzer:
 
         results['recommendations'] = recommendations
 
+    def parse_cloudformation_template(self, template_content: str) -> Dict:
+        """Parse CloudFormation template with support for intrinsic functions"""
+        try:
+            # Create a custom YAML loader that can handle CloudFormation intrinsic functions
+            class CloudFormationLoader(yaml.SafeLoader):
+                pass
+
+            # Add constructors for CloudFormation intrinsic functions
+            def construct_cloudformation_tag(loader, tag_suffix, node):
+                """Generic constructor for CloudFormation intrinsic functions"""
+                if isinstance(node, yaml.ScalarNode):
+                    return {'Fn::' + tag_suffix: loader.construct_scalar(node)}
+                elif isinstance(node, yaml.SequenceNode):
+                    return {'Fn::' + tag_suffix: loader.construct_sequence(node)}
+                elif isinstance(node, yaml.MappingNode):
+                    return {'Fn::' + tag_suffix: loader.construct_mapping(node)}
+                return {'Fn::' + tag_suffix: None}
+
+            # CloudFormation intrinsic functions
+            cf_tags = [
+                'Ref', 'GetAtt', 'GetAZs', 'ImportValue', 'Join', 'Split', 'Select', 'Sub',
+                'Base64', 'Cidr', 'FindInMap', 'GetRef', 'If', 'Not', 'And', 'Or', 'Equals',
+                'Condition', 'Transform'
+            ]
+
+            for tag in cf_tags:
+                CloudFormationLoader.add_constructor(
+                    f'!{tag}',
+                    lambda loader, node, tag=tag: construct_cloudformation_tag(loader, tag, node)
+                )
+
+            # Parse the template with our custom loader
+            template = yaml.load(template_content, Loader=CloudFormationLoader)
+            return template
+
+        except Exception as e:
+            print(f"Error parsing CloudFormation template: {e}")
+            # Fallback to basic YAML parsing, ignoring intrinsic functions
+            try:
+                # Try to parse with safe_load, which will ignore unknown tags
+                template = yaml.safe_load(template_content)
+                return template
+            except Exception as e2:
+                print(f"Error with fallback parsing: {e2}")
+                return {}
+
     def analyze_template_features(self, template_content: str) -> Dict:
         """Analyze which features are enabled in the template"""
         try:
-            template = yaml.safe_load(template_content)
+            template = self.parse_cloudformation_template(template_content)
             features = {
                 'asset_inventory': False,
                 'sensor_management': False,
@@ -696,6 +651,161 @@ class SCPAnalyzer:
         except Exception as e:
             print(f"Error analyzing template features: {e}")
             return {}
+
+    def extract_permissions_from_template(self, template_content: str) -> Dict[str, List[str]]:
+        """Extract actual AWS permissions required from CloudFormation template"""
+        try:
+            print("🔍 Parsing CloudFormation template to extract required permissions...")
+            template = self.parse_cloudformation_template(template_content)
+            
+            # CloudFormation resource types to required AWS permissions mapping
+            cf_resource_permissions = {
+                'AWS::IAM::Role': ['iam:CreateRole', 'iam:GetRole', 'iam:DeleteRole', 'iam:UpdateRole', 
+                                  'iam:PutRolePolicy', 'iam:AttachRolePolicy', 'iam:DetachRolePolicy', 
+                                  'iam:PassRole', 'iam:TagRole', 'iam:UntagRole'],
+                'AWS::IAM::Policy': ['iam:CreatePolicy', 'iam:GetPolicy', 'iam:DeletePolicy', 
+                                    'iam:CreatePolicyVersion', 'iam:DeletePolicyVersion', 'iam:AttachRolePolicy'],
+                'AWS::IAM::InstanceProfile': ['iam:CreateInstanceProfile', 'iam:DeleteInstanceProfile', 
+                                            'iam:AddRoleToInstanceProfile', 'iam:RemoveRoleFromInstanceProfile'],
+                'AWS::Lambda::Function': ['lambda:CreateFunction', 'lambda:DeleteFunction', 'lambda:UpdateFunctionCode',
+                                         'lambda:UpdateFunctionConfiguration', 'lambda:GetFunction', 'lambda:TagResource'],
+                'AWS::Events::Rule': ['events:PutRule', 'events:DeleteRule', 'events:PutTargets', 
+                                     'events:RemoveTargets', 'events:DescribeRule'],
+                'AWS::CloudTrail::Trail': ['cloudtrail:CreateTrail', 'cloudtrail:DeleteTrail', 
+                                          'cloudtrail:UpdateTrail', 'cloudtrail:StartLogging', 'cloudtrail:StopLogging'],
+                'AWS::S3::Bucket': ['s3:CreateBucket', 's3:DeleteBucket', 's3:PutBucketPolicy', 
+                                   's3:PutBucketAcl', 's3:GetBucketLocation'],
+                'AWS::CloudFormation::Stack': ['cloudformation:CreateStack', 'cloudformation:UpdateStack',
+                                              'cloudformation:DeleteStack', 'cloudformation:DescribeStacks'],
+                'AWS::CloudFormation::StackSet': ['cloudformation:CreateStackSet', 'cloudformation:UpdateStackSet',
+                                                 'cloudformation:DeleteStackSet', 'cloudformation:CreateStackInstances',
+                                                 'cloudformation:UpdateStackInstances', 'cloudformation:DeleteStackInstances'],
+                'AWS::Lambda::Permission': ['lambda:AddPermission', 'lambda:RemovePermission'],
+                'AWS::Events::Permission': ['events:PutPermission', 'events:RemovePermission'],
+                'AWS::Logs::LogGroup': ['logs:CreateLogGroup', 'logs:DeleteLogGroup', 'logs:PutRetentionPolicy'],
+                'AWS::SNS::Topic': ['sns:CreateTopic', 'sns:DeleteTopic', 'sns:SetTopicAttributes'],
+                'AWS::SQS::Queue': ['sqs:CreateQueue', 'sqs:DeleteQueue', 'sqs:SetQueueAttributes'],
+                'AWS::KMS::Key': ['kms:CreateKey', 'kms:DeleteKey', 'kms:PutKeyPolicy'],
+                'AWS::EC2::SecurityGroup': ['ec2:CreateSecurityGroup', 'ec2:DeleteSecurityGroup', 'ec2:AuthorizeSecurityGroupIngress'],
+                'AWS::SSM::Parameter': ['ssm:PutParameter', 'ssm:GetParameter', 'ssm:DeleteParameter']
+            }
+
+            # Extract permissions needed based on resources in template
+            extracted_permissions = {}
+            resources = template.get('Resources', {})
+            
+            print(f"   Found {len(resources)} resources in template")
+            
+            for resource_name, resource_config in resources.items():
+                resource_type = resource_config.get('Type', '')
+                
+                if resource_type in cf_resource_permissions:
+                    required_perms = cf_resource_permissions[resource_type]
+                    print(f"   📋 {resource_name} ({resource_type}): {len(required_perms)} permissions")
+                    
+                    for perm in required_perms:
+                        service = perm.split(':')[0]
+                        if service not in extracted_permissions:
+                            extracted_permissions[service] = []
+                        if perm not in extracted_permissions[service]:
+                            extracted_permissions[service].append(perm)
+
+            # Extract permissions from IAM policies defined in template
+            iam_policy_permissions = self.extract_iam_policy_permissions(resources)
+            for service, perms in iam_policy_permissions.items():
+                if service not in extracted_permissions:
+                    extracted_permissions[service] = []
+                for perm in perms:
+                    if perm not in extracted_permissions[service]:
+                        extracted_permissions[service].append(perm)
+
+            # Add essential permissions that CloudFormation itself needs
+            essential_permissions = {
+                'sts': ['sts:AssumeRole', 'sts:GetCallerIdentity'],
+                'ec2': ['ec2:DescribeRegions'],
+                'organizations': ['organizations:DescribeOrganization', 'organizations:ListAccounts']
+            }
+            
+            for service, perms in essential_permissions.items():
+                if service not in extracted_permissions:
+                    extracted_permissions[service] = []
+                for perm in perms:
+                    if perm not in extracted_permissions[service]:
+                        extracted_permissions[service].append(perm)
+
+            # Sort permissions for consistency
+            for service in extracted_permissions:
+                extracted_permissions[service].sort()
+
+            print(f"✅ Extracted permissions for {len(extracted_permissions)} services:")
+            for service, perms in extracted_permissions.items():
+                print(f"   {service.upper()}: {len(perms)} permissions")
+
+            return extracted_permissions
+
+        except Exception as e:
+            print(f"❌ Error extracting permissions from template: {e}")
+            print("   Cannot analyze SCPs without template permissions.")
+            return None
+
+    def extract_iam_policy_permissions(self, resources: Dict) -> Dict[str, List[str]]:
+        """Extract permissions from IAM policies defined in the CloudFormation template"""
+        policy_permissions = {}
+        
+        for resource_name, resource_config in resources.items():
+            resource_type = resource_config.get('Type', '')
+            
+            if resource_type == 'AWS::IAM::Role':
+                # Check AssumeRolePolicyDocument and inline policies
+                properties = resource_config.get('Properties', {})
+                
+                # Extract from inline policies
+                policies = properties.get('Policies', [])
+                for policy in policies:
+                    policy_doc = policy.get('PolicyDocument', {})
+                    permissions = self.extract_actions_from_policy_document(policy_doc)
+                    for perm in permissions:
+                        service = perm.split(':')[0]
+                        if service not in policy_permissions:
+                            policy_permissions[service] = []
+                        if perm not in policy_permissions[service]:
+                            policy_permissions[service].append(perm)
+
+            elif resource_type == 'AWS::IAM::Policy':
+                # Extract from standalone policies
+                properties = resource_config.get('Properties', {})
+                policy_doc = properties.get('PolicyDocument', {})
+                permissions = self.extract_actions_from_policy_document(policy_doc)
+                for perm in permissions:
+                    service = perm.split(':')[0]
+                    if service not in policy_permissions:
+                        policy_permissions[service] = []
+                    if perm not in policy_permissions[service]:
+                        policy_permissions[service].append(perm)
+
+        return policy_permissions
+
+    def extract_actions_from_policy_document(self, policy_doc: Dict) -> List[str]:
+        """Extract AWS actions from an IAM policy document"""
+        actions = []
+        
+        statements = policy_doc.get('Statement', [])
+        if not isinstance(statements, list):
+            statements = [statements]
+            
+        for statement in statements:
+            # Only extract from Allow statements (Deny statements don't indicate required permissions)
+            if statement.get('Effect') == 'Allow':
+                statement_actions = statement.get('Action', [])
+                if isinstance(statement_actions, str):
+                    statement_actions = [statement_actions]
+                
+                for action in statement_actions:
+                    # Skip wildcard actions and CloudFormation intrinsic functions
+                    if isinstance(action, str) and ':' in action and not action.startswith('!'):
+                        actions.append(action)
+        
+        return actions
 
     def print_detailed_report(self, results: Dict, template_features: Dict = None):
         """Print a detailed analysis report"""
@@ -765,9 +875,9 @@ class SCPAnalyzer:
             print(f"   {recommendation}")
 
         print("\n🔍 DETAILED ACTIONS ANALYSIS:")
-        print(f"   Total Required Actions: {sum(len(actions) for actions in self.required_permissions.values())}")
+        print(f"   Total Required Actions: {sum(len(actions) for actions in self.template_permissions.values())}")
 
-        for service, actions in self.required_permissions.items():
+        for service, actions in self.template_permissions.items():
             blocked_count = len(results['blocked_actions'].get(service, []))
             total_count = len(actions)
             status = "🔴 BLOCKED" if blocked_count > 0 else "✅ ALLOWED"
@@ -844,9 +954,9 @@ class SCPAnalyzer:
             lines.append(f"   {recommendation}")
 
         lines.append("\n🔍 DETAILED ACTIONS ANALYSIS:")
-        lines.append(f"   Total Required Actions: {sum(len(actions) for actions in self.required_permissions.values())}")
+        lines.append(f"   Total Required Actions: {sum(len(actions) for actions in self.template_permissions.values())}")
 
-        for service, actions in self.required_permissions.items():
+        for service, actions in self.template_permissions.items():
             blocked_count = len(results['blocked_actions'].get(service, []))
             total_count = len(actions)
             status = "🔴 BLOCKED" if blocked_count > 0 else "✅ ALLOWED"
@@ -882,7 +992,7 @@ class SCPAnalyzer:
         }
 
         # Add service breakdown
-        for service, actions in self.required_permissions.items():
+        for service, actions in self.template_permissions.items():
             blocked_count = len(results['blocked_actions'].get(service, []))
             total_count = len(actions)
             json_report["service_breakdown"][service] = {
@@ -933,6 +1043,43 @@ class SCPAnalyzer:
                     'blocking_policies': []
                 }
 
+            # Get template content and extract permissions
+            template_content = None
+            extracted_permissions = None
+            
+            if template_file:
+                # Use provided template file
+                try:
+                    print(f"📖 Reading template from file: {template_file}")
+                    with open(template_file, 'r', encoding='utf-8') as f:
+                        template_content = f.read()
+                    # Extract permissions from template
+                    extracted_permissions = self.extract_permissions_from_template(template_content)
+                except Exception as e:
+                    print(f"Warning: Could not read template file: {e}")
+                    print("   Falling back to hardcoded permissions...")
+            else:
+                # Fetch template from URL
+                template_content = self.fetch_template_from_url(self.DEFAULT_TEMPLATE_URL)
+                if template_content:
+                    # Extract permissions from template
+                    extracted_permissions = self.extract_permissions_from_template(template_content)
+
+            # Set template permissions from extracted permissions
+            if extracted_permissions:
+                print("✅ Using permissions extracted from CloudFormation template")
+                self.template_permissions = extracted_permissions
+            else:
+                print("❌ ERROR: Cannot analyze SCPs without template permissions.")
+                print("   Please ensure you have a valid CrowdStrike template file or URL access.")
+                return {
+                    'severity': 'ERROR',
+                    'recommendations': ['❌ Template analysis failed. Cannot determine required permissions.'],
+                    'blocked_actions': {},
+                    'total_policies': 0,
+                    'blocking_policies': []
+                }
+
             # Get all organization policies
             policies = self.get_all_organization_policies()
             if not policies:
@@ -945,26 +1092,13 @@ class SCPAnalyzer:
                     'blocking_policies': []
                 }
 
-            # Analyze policies
+            # Analyze policies (now using extracted permissions)
             results = self.analyze_policies(policies)
 
             # Analyze template features
             template_features = None
-            template_content = None
-
-            if template_file:
-                # Use provided template file
-                try:
-                    with open(template_file, 'r') as f:
-                        template_content = f.read()
-                    template_features = self.analyze_template_features(template_content)
-                except Exception as e:
-                    print(f"Warning: Could not analyze template file: {e}")
-            else:
-                # Fetch template from URL
-                template_content = self.fetch_template_from_url(self.DEFAULT_TEMPLATE_URL)
-                if template_content:
-                    template_features = self.analyze_template_features(template_content)
+            if template_content:
+                template_features = self.analyze_template_features(template_content)
 
             # Print detailed report
             self.print_detailed_report(results, template_features)
