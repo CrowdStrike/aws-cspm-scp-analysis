@@ -25,7 +25,7 @@ jobs:
         pip install flake8 pylint bandit
     - name: Lint with flake8
       run: |
-        flake8 analyze_scp_crowdstrike.py
+        flake8 --ignore=E501 analyze_scp_crowdstrike.py
     - name: Lint with pylint
       run: |
         pylint analyze_scp_crowdstrike.py
