@@ -652,100 +652,226 @@ class SCPAnalyzer:
             print(f"Error analyzing template features: {e}")
             return {}
 
-    def extract_permissions_from_template(self, template_content: str) -> Dict[str, List[str]]:
-        """Extract actual AWS permissions required from CloudFormation template"""
+    def extract_permissions_from_template(self, template_content: str, base_url: str = None) -> Dict[str, List[str]]:
+        """Extract actual AWS permissions required from CloudFormation template and all child templates"""
         try:
             print("🔍 Parsing CloudFormation template to extract required permissions...")
-            template = self.parse_cloudformation_template(template_content)
             
-            # CloudFormation resource types to required AWS permissions mapping
-            cf_resource_permissions = {
-                'AWS::IAM::Role': ['iam:CreateRole', 'iam:GetRole', 'iam:DeleteRole', 'iam:UpdateRole', 
-                                  'iam:PutRolePolicy', 'iam:AttachRolePolicy', 'iam:DetachRolePolicy', 
-                                  'iam:PassRole', 'iam:TagRole', 'iam:UntagRole'],
-                'AWS::IAM::Policy': ['iam:CreatePolicy', 'iam:GetPolicy', 'iam:DeletePolicy', 
-                                    'iam:CreatePolicyVersion', 'iam:DeletePolicyVersion', 'iam:AttachRolePolicy'],
-                'AWS::IAM::InstanceProfile': ['iam:CreateInstanceProfile', 'iam:DeleteInstanceProfile', 
-                                            'iam:AddRoleToInstanceProfile', 'iam:RemoveRoleFromInstanceProfile'],
-                'AWS::Lambda::Function': ['lambda:CreateFunction', 'lambda:DeleteFunction', 'lambda:UpdateFunctionCode',
-                                         'lambda:UpdateFunctionConfiguration', 'lambda:GetFunction', 'lambda:TagResource'],
-                'AWS::Events::Rule': ['events:PutRule', 'events:DeleteRule', 'events:PutTargets', 
-                                     'events:RemoveTargets', 'events:DescribeRule'],
-                'AWS::CloudTrail::Trail': ['cloudtrail:CreateTrail', 'cloudtrail:DeleteTrail', 
-                                          'cloudtrail:UpdateTrail', 'cloudtrail:StartLogging', 'cloudtrail:StopLogging'],
-                'AWS::S3::Bucket': ['s3:CreateBucket', 's3:DeleteBucket', 's3:PutBucketPolicy', 
-                                   's3:PutBucketAcl', 's3:GetBucketLocation'],
-                'AWS::CloudFormation::Stack': ['cloudformation:CreateStack', 'cloudformation:UpdateStack',
-                                              'cloudformation:DeleteStack', 'cloudformation:DescribeStacks'],
-                'AWS::CloudFormation::StackSet': ['cloudformation:CreateStackSet', 'cloudformation:UpdateStackSet',
-                                                 'cloudformation:DeleteStackSet', 'cloudformation:CreateStackInstances',
-                                                 'cloudformation:UpdateStackInstances', 'cloudformation:DeleteStackInstances'],
-                'AWS::Lambda::Permission': ['lambda:AddPermission', 'lambda:RemovePermission'],
-                'AWS::Events::Permission': ['events:PutPermission', 'events:RemovePermission'],
-                'AWS::Logs::LogGroup': ['logs:CreateLogGroup', 'logs:DeleteLogGroup', 'logs:PutRetentionPolicy'],
-                'AWS::SNS::Topic': ['sns:CreateTopic', 'sns:DeleteTopic', 'sns:SetTopicAttributes'],
-                'AWS::SQS::Queue': ['sqs:CreateQueue', 'sqs:DeleteQueue', 'sqs:SetQueueAttributes'],
-                'AWS::KMS::Key': ['kms:CreateKey', 'kms:DeleteKey', 'kms:PutKeyPolicy'],
-                'AWS::EC2::SecurityGroup': ['ec2:CreateSecurityGroup', 'ec2:DeleteSecurityGroup', 'ec2:AuthorizeSecurityGroupIngress'],
-                'AWS::SSM::Parameter': ['ssm:PutParameter', 'ssm:GetParameter', 'ssm:DeleteParameter']
-            }
-
-            # Extract permissions needed based on resources in template
-            extracted_permissions = {}
-            resources = template.get('Resources', {})
+            # Parse all templates recursively (main + child templates)
+            all_permissions = self.extract_permissions_recursive(template_content, base_url, set())
             
-            print(f"   Found {len(resources)} resources in template")
+            if all_permissions:
+                print(f"\n✅ Final aggregated permissions for {len(all_permissions)} services:")
+                for service, perms in all_permissions.items():
+                    print(f"   {service.upper()}: {len(perms)} permissions")
             
-            for resource_name, resource_config in resources.items():
-                resource_type = resource_config.get('Type', '')
-                
-                if resource_type in cf_resource_permissions:
-                    required_perms = cf_resource_permissions[resource_type]
-                    print(f"   📋 {resource_name} ({resource_type}): {len(required_perms)} permissions")
-                    
-                    for perm in required_perms:
-                        service = perm.split(':')[0]
-                        if service not in extracted_permissions:
-                            extracted_permissions[service] = []
-                        if perm not in extracted_permissions[service]:
-                            extracted_permissions[service].append(perm)
-
-            # Extract permissions from IAM policies defined in template
-            iam_policy_permissions = self.extract_iam_policy_permissions(resources)
-            for service, perms in iam_policy_permissions.items():
-                if service not in extracted_permissions:
-                    extracted_permissions[service] = []
-                for perm in perms:
-                    if perm not in extracted_permissions[service]:
-                        extracted_permissions[service].append(perm)
-
-            # Add essential permissions that CloudFormation itself needs
-            essential_permissions = {
-                'sts': ['sts:AssumeRole', 'sts:GetCallerIdentity'],
-                'ec2': ['ec2:DescribeRegions'],
-                'organizations': ['organizations:DescribeOrganization', 'organizations:ListAccounts']
-            }
-            
-            for service, perms in essential_permissions.items():
-                if service not in extracted_permissions:
-                    extracted_permissions[service] = []
-                for perm in perms:
-                    if perm not in extracted_permissions[service]:
-                        extracted_permissions[service].append(perm)
-
-            # Sort permissions for consistency
-            for service in extracted_permissions:
-                extracted_permissions[service].sort()
-
-            print(f"✅ Extracted permissions for {len(extracted_permissions)} services:")
-            for service, perms in extracted_permissions.items():
-                print(f"   {service.upper()}: {len(perms)} permissions")
-
-            return extracted_permissions
+            return all_permissions
 
         except Exception as e:
             print(f"❌ Error extracting permissions from template: {e}")
             print("   Cannot analyze SCPs without template permissions.")
+            return None
+
+    def extract_permissions_recursive(self, template_content: str, base_url: str = None, 
+                                    processed_urls: set = None) -> Dict[str, List[str]]:
+        """Recursively extract permissions from template and all child templates"""
+        if processed_urls is None:
+            processed_urls = set()
+        
+        # Parse the current template
+        template = self.parse_cloudformation_template(template_content)
+        if not template:
+            return {}
+        
+        # CloudFormation resource types to required AWS permissions mapping
+        cf_resource_permissions = {
+            'AWS::IAM::Role': ['iam:CreateRole', 'iam:GetRole', 'iam:DeleteRole', 'iam:UpdateRole', 
+                              'iam:PutRolePolicy', 'iam:AttachRolePolicy', 'iam:DetachRolePolicy', 
+                              'iam:PassRole', 'iam:TagRole', 'iam:UntagRole'],
+            'AWS::IAM::Policy': ['iam:CreatePolicy', 'iam:GetPolicy', 'iam:DeletePolicy', 
+                                'iam:CreatePolicyVersion', 'iam:DeletePolicyVersion', 'iam:AttachRolePolicy'],
+            'AWS::IAM::InstanceProfile': ['iam:CreateInstanceProfile', 'iam:DeleteInstanceProfile', 
+                                        'iam:AddRoleToInstanceProfile', 'iam:RemoveRoleFromInstanceProfile'],
+            'AWS::Lambda::Function': ['lambda:CreateFunction', 'lambda:DeleteFunction', 'lambda:UpdateFunctionCode',
+                                     'lambda:UpdateFunctionConfiguration', 'lambda:GetFunction', 'lambda:TagResource'],
+            'AWS::Events::Rule': ['events:PutRule', 'events:DeleteRule', 'events:PutTargets', 
+                                 'events:RemoveTargets', 'events:DescribeRule'],
+            'AWS::CloudTrail::Trail': ['cloudtrail:CreateTrail', 'cloudtrail:DeleteTrail', 
+                                      'cloudtrail:UpdateTrail', 'cloudtrail:StartLogging', 'cloudtrail:StopLogging'],
+            'AWS::S3::Bucket': ['s3:CreateBucket', 's3:DeleteBucket', 's3:PutBucketPolicy', 
+                               's3:PutBucketAcl', 's3:GetBucketLocation'],
+            'AWS::CloudFormation::Stack': ['cloudformation:CreateStack', 'cloudformation:UpdateStack',
+                                          'cloudformation:DeleteStack', 'cloudformation:DescribeStacks'],
+            'AWS::CloudFormation::StackSet': ['cloudformation:CreateStackSet', 'cloudformation:UpdateStackSet',
+                                             'cloudformation:DeleteStackSet', 'cloudformation:CreateStackInstances',
+                                             'cloudformation:UpdateStackInstances', 'cloudformation:DeleteStackInstances'],
+            'AWS::Lambda::Permission': ['lambda:AddPermission', 'lambda:RemovePermission'],
+            'AWS::Events::Permission': ['events:PutPermission', 'events:RemovePermission'],
+            'AWS::Logs::LogGroup': ['logs:CreateLogGroup', 'logs:DeleteLogGroup', 'logs:PutRetentionPolicy'],
+            'AWS::SNS::Topic': ['sns:CreateTopic', 'sns:DeleteTopic', 'sns:SetTopicAttributes'],
+            'AWS::SQS::Queue': ['sqs:CreateQueue', 'sqs:DeleteQueue', 'sqs:SetQueueAttributes'],
+            'AWS::KMS::Key': ['kms:CreateKey', 'kms:DeleteKey', 'kms:PutKeyPolicy'],
+            'AWS::EC2::SecurityGroup': ['ec2:CreateSecurityGroup', 'ec2:DeleteSecurityGroup', 'ec2:AuthorizeSecurityGroupIngress'],
+            'AWS::SSM::Parameter': ['ssm:PutParameter', 'ssm:GetParameter', 'ssm:DeleteParameter']
+        }
+
+        # Extract permissions from current template
+        extracted_permissions = {}
+        resources = template.get('Resources', {})
+        
+        print(f"   📄 Analyzing template with {len(resources)} resources...")
+        
+        # Extract child template URLs
+        child_template_urls = self.extract_child_template_urls(resources, base_url)
+        
+        # Process resources in current template
+        for resource_name, resource_config in resources.items():
+            resource_type = resource_config.get('Type', '')
+            
+            if resource_type in cf_resource_permissions:
+                required_perms = cf_resource_permissions[resource_type]
+                print(f"     📋 {resource_name} ({resource_type}): {len(required_perms)} permissions")
+                
+                for perm in required_perms:
+                    service = perm.split(':')[0]
+                    if service not in extracted_permissions:
+                        extracted_permissions[service] = []
+                    if perm not in extracted_permissions[service]:
+                        extracted_permissions[service].append(perm)
+
+        # Extract permissions from IAM policies in current template
+        iam_policy_permissions = self.extract_iam_policy_permissions(resources)
+        for service, perms in iam_policy_permissions.items():
+            if service not in extracted_permissions:
+                extracted_permissions[service] = []
+            for perm in perms:
+                if perm not in extracted_permissions[service]:
+                    extracted_permissions[service].append(perm)
+
+        # Recursively process child templates
+        if child_template_urls:
+            print(f"   🔗 Found {len(child_template_urls)} child templates to process...")
+        
+        for child_url in child_template_urls:
+            if child_url not in processed_urls:
+                processed_urls.add(child_url)
+                print(f"   📥 Fetching child template: {child_url}")
+                
+                child_content = self.fetch_template_from_url(child_url)
+                if child_content:
+                    print(f"     ✅ Child template fetched ({len(child_content)} characters)")
+                    child_permissions = self.extract_permissions_recursive(
+                        child_content, child_url, processed_urls
+                    )
+                    
+                    # Merge child permissions with current permissions
+                    for service, perms in child_permissions.items():
+                        if service not in extracted_permissions:
+                            extracted_permissions[service] = []
+                        for perm in perms:
+                            if perm not in extracted_permissions[service]:
+                                extracted_permissions[service].append(perm)
+                else:
+                    print(f"     ❌ Failed to fetch child template: {child_url}")
+            else:
+                print(f"   ⏭️  Skipping already processed template: {child_url}")
+
+        # Add essential permissions that CloudFormation itself needs
+        essential_permissions = {
+            'sts': ['sts:AssumeRole', 'sts:GetCallerIdentity'],
+            'ec2': ['ec2:DescribeRegions'],
+            'organizations': ['organizations:DescribeOrganization', 'organizations:ListAccounts']
+        }
+        
+        for service, perms in essential_permissions.items():
+            if service not in extracted_permissions:
+                extracted_permissions[service] = []
+            for perm in perms:
+                if perm not in extracted_permissions[service]:
+                    extracted_permissions[service].append(perm)
+
+        # Sort permissions for consistency
+        for service in extracted_permissions:
+            extracted_permissions[service].sort()
+
+        return extracted_permissions
+
+    def extract_child_template_urls(self, resources: Dict, base_url: str = None) -> List[str]:
+        """Extract TemplateURL properties from CloudFormation Stack and StackSet resources"""
+        child_urls = []
+        
+        for resource_name, resource_config in resources.items():
+            resource_type = resource_config.get('Type', '')
+            
+            if resource_type in ['AWS::CloudFormation::Stack', 'AWS::CloudFormation::StackSet']:
+                properties = resource_config.get('Properties', {})
+                template_url = properties.get('TemplateURL')
+                
+                if template_url:
+                    # Handle CloudFormation intrinsic functions
+                    if isinstance(template_url, dict):
+                        # Try to extract URL from common intrinsic functions
+                        if 'Fn::Sub' in template_url:
+                            # For Fn::Sub, try to extract the template part
+                            sub_content = template_url['Fn::Sub']
+                            if isinstance(sub_content, str):
+                                template_url = sub_content
+                            elif isinstance(sub_content, list) and len(sub_content) > 0:
+                                template_url = sub_content[0]
+                        elif 'Fn::Join' in template_url:
+                            # For Fn::Join, try to reconstruct the URL
+                            join_parts = template_url['Fn::Join']
+                            if isinstance(join_parts, list) and len(join_parts) == 2:
+                                delimiter = join_parts[0]
+                                parts = join_parts[1]
+                                if isinstance(parts, list):
+                                    template_url = delimiter.join(str(part) for part in parts)
+                        # Skip other complex intrinsic functions for now
+                        else:
+                            print(f"     ⚠️  Skipping complex intrinsic function in TemplateURL for {resource_name}")
+                            continue
+                    
+                    if isinstance(template_url, str):
+                        # Resolve relative URLs
+                        resolved_url = self.resolve_template_url(template_url, base_url)
+                        if resolved_url:
+                            child_urls.append(resolved_url)
+                            print(f"     🔗 Found child template: {resource_name} -> {resolved_url}")
+        
+        return child_urls
+
+    def resolve_template_url(self, template_url: str, base_url: str = None) -> str:
+        """Resolve template URL, handling relative URLs"""
+        try:
+            # If it's already a full URL, return as-is
+            if template_url.startswith('http://') or template_url.startswith('https://'):
+                return template_url
+            
+            # If we have a base URL, construct the full URL
+            if base_url:
+                from urllib.parse import urljoin, urlparse
+                
+                # Parse base URL
+                parsed_base = urlparse(base_url)
+                
+                # If template_url starts with '/', it's absolute path
+                if template_url.startswith('/'):
+                    return f"{parsed_base.scheme}://{parsed_base.netloc}{template_url}"
+                
+                # Otherwise, it's relative to the base URL directory
+                base_dir = '/'.join(base_url.split('/')[:-1]) + '/'
+                return urljoin(base_dir, template_url)
+            
+            # Default CrowdStrike base URL if no base_url provided
+            default_base = 'https://cs-prod-cloudconnect-templates.s3-us-west-1.amazonaws.com/modular/'
+            
+            if template_url.startswith('/'):
+                return f"https://cs-prod-cloudconnect-templates.s3-us-west-1.amazonaws.com{template_url}"
+            else:
+                return default_base + template_url
+                
+        except Exception as e:
+            print(f"     ❌ Error resolving template URL '{template_url}': {e}")
             return None
 
     def extract_iam_policy_permissions(self, resources: Dict) -> Dict[str, List[str]]:
@@ -1053,7 +1179,7 @@ class SCPAnalyzer:
                     print(f"📖 Reading template from file: {template_file}")
                     with open(template_file, 'r', encoding='utf-8') as f:
                         template_content = f.read()
-                    # Extract permissions from template
+                    # Extract permissions from template (no base_url needed for local files)
                     extracted_permissions = self.extract_permissions_from_template(template_content)
                 except Exception as e:
                     print(f"Warning: Could not read template file: {e}")
@@ -1062,8 +1188,10 @@ class SCPAnalyzer:
                 # Fetch template from URL
                 template_content = self.fetch_template_from_url(self.DEFAULT_TEMPLATE_URL)
                 if template_content:
-                    # Extract permissions from template
-                    extracted_permissions = self.extract_permissions_from_template(template_content)
+                    # Extract permissions from template (pass base_url for child template resolution)
+                    extracted_permissions = self.extract_permissions_from_template(
+                        template_content, self.DEFAULT_TEMPLATE_URL
+                    )
 
             # Set template permissions from extracted permissions
             if extracted_permissions:
