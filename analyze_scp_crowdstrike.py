@@ -699,9 +699,9 @@ class SCPAnalyzer:
 
     def print_detailed_report(self, results: Dict, template_features: Dict = None):
         """Print a detailed analysis report"""
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("🛡️  CROWDSTRIKE CLOUDFORMATION TEMPLATE - SCP ANALYSIS REPORT")
-        print("="*80)
+        print("=" * 80)
 
         account_id = self.get_account_id()
         org_info = self.get_organization_info()
@@ -773,14 +773,14 @@ class SCPAnalyzer:
             status = "🔴 BLOCKED" if blocked_count > 0 else "✅ ALLOWED"
             print(f"   {service.upper()}: {status} ({blocked_count}/{total_count} blocked)")
 
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
 
     def generate_detailed_report_text(self, results: Dict, template_features: Dict = None) -> str:
         """Generate detailed report as text string for file output"""
         lines = []
-        lines.append("="*80)
+        lines.append("=" * 80)
         lines.append("🛡️  CROWDSTRIKE CLOUDFORMATION TEMPLATE - SCP ANALYSIS REPORT")
-        lines.append("="*80)
+        lines.append("=" * 80)
 
         account_id = self.get_account_id()
         org_info = self.get_organization_info()
@@ -852,7 +852,7 @@ class SCPAnalyzer:
             status = "🔴 BLOCKED" if blocked_count > 0 else "✅ ALLOWED"
             lines.append(f"   {service.upper()}: {status} ({blocked_count}/{total_count} blocked)")
 
-        lines.append("\n" + "="*80)
+        lines.append("\n" + "=" * 80)
 
         return "\n".join(lines)
 
