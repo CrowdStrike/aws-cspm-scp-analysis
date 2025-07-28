@@ -600,7 +600,8 @@ class SCPAnalyzer:
                 )
 
             # Parse the template with our custom loader
-            template = yaml.load(template_content, Loader=CloudFormationLoader)
+            # This is safe because CloudFormationLoader inherits from yaml.SafeLoader
+            template = yaml.load(template_content, Loader=CloudFormationLoader)  # nosec B506
             return template
 
         except Exception as e:
