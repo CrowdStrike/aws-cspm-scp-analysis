@@ -6,7 +6,7 @@ This tool analyzes Service Control Policies (SCPs) in your AWS Organization to d
 
 CrowdStrike Falcon Cloud Security requires various AWS permissions to deploy successfully in your AWS Organzation. This script:
 
-1. **Fetches and analyzes** all Service Control Policies attached to your AWS account
+1. **Fetches and analyzes** all Service Control Policies attached to your AWS Organization
 2. **Identifies conflicts** between SCPs and required permissions
 3. **Provides detailed reporting** on what might fail during deployment
 4. **Offers recommendations** for resolving permission conflicts
@@ -60,12 +60,26 @@ python analyze_scp_crowdstrike.py --profile production
 
 # Use local template file instead of fetching latest from URL
 python analyze_scp_crowdstrike.py --template-file /path/to/template.yaml
+
+# All features enabled (default behavior)
+python analyze_scp_crowdstrike.py
+
+# Enable only Asset Inventory
+python analyze_scp_crowdstrike.py --asset-inventory
+
+# Enable only Asset Inventory and DSPM
+python analyze_scp_crowdstrike.py --asset-inventory --dspm
+
+# Enable multiple specific features
+python analyze_scp_crowdstrike.py --sensor-management --realtime-visibility
+
 ```
 
 ## Output Examples
 
 ### ✅ No Conflicts Detected
 ```
+================================================================================
 🛡️  CROWDSTRIKE CLOUDFORMATION TEMPLATE - SCP ANALYSIS REPORT
 ================================================================================
 
@@ -75,7 +89,13 @@ python analyze_scp_crowdstrike.py --template-file /path/to/template.yaml
    Profile: default
    Organization ID: o-abc1234567
    Master Account: 123456789012
-   Feature Set: ALL
+
+🔧 ANALYZED CSPM FEATURES:
+   Asset Inventory: ✅ Enabled
+   Sensor Management: ✅ Enabled
+   Realtime Visibility: ✅ Enabled
+   Dspm: ✅ Enabled
+   Organization Deployment: ✅ Enabled
 
 📋 SCP ANALYSIS RESULTS:
    Total Policies Analyzed: 2
@@ -88,36 +108,82 @@ python analyze_scp_crowdstrike.py --template-file /path/to/template.yaml
 
 ### ⚠️ Conflicts Detected
 ```
+================================================================================
+🛡️  CROWDSTRIKE CSPM - SCP ANALYSIS REPORT
+================================================================================
+
+📊 ACCOUNT INFORMATION:
+   Account ID: 123456789012
+   Region: us-east-1
+   Profile: default
+   Organization ID: o-abc1234567
+   Master Account: 123456789012
+
+🔧 ANALYZED CSPM FEATURES:
+   Asset Inventory: ✅ Enabled
+   Sensor Management: ✅ Enabled
+   Realtime Visibility: ✅ Enabled
+   Dspm: ✅ Enabled
+   Organization Deployment: ✅ Enabled
+
 📋 SCP ANALYSIS RESULTS:
-   Total Policies Analyzed: 3
-   Blocking Policies: 1
+   Total Policies Analyzed: 6
+   Blocking Policies: 2
    Severity: HIGH
 
 📜 BLOCKING POLICIES:
-   Policy: policy-name (p-efgh5678)
+   Policy: block-external-stacksets (p-123456)
+   Attached to: Root
    Description: 
    Blocked Actions: 1
      - cloudformation:CreateStackSet
+   🔧 Recommendations for this policy:
+   🔴 CRITICAL: This policy blocks 1 CloudFormation permissions.
+      → Add exceptions for CrowdStrike CloudFormation operations:
+        • Allow cloudformation:* on resources: arn:aws:cloudformation:*:*:stack/CrowdStrike*
+        • Allow cloudformation:* on resources: arn:aws:cloudformation:*:*:stackset/CrowdStrike*
 
-   Policy: ploicy-name (p-ijkl9012)
+   Policy: block-region (p-987654)
+   Attached to: OU
    Description: 
-   Blocked Actions: 43
-     - cloudformation:GetTemplate
-     - cloudformation:DeleteStack
-     ...
+   Blocked Actions: 278
+     - ec2:CreateTags
+     - aoss:BatchGetCollection
+     - cloudformation:DeleteStackSet
+     ... and 275 more
+   🔧 Recommendations for this policy:
+   🔴 CRITICAL: This policy blocks 16 CloudFormation permissions.
+      → Add exceptions for CrowdStrike CloudFormation operations:
+        • Allow cloudformation:* on resources: arn:aws:cloudformation:*:*:stack/CrowdStrike*
+        • Allow cloudformation:* on resources: arn:aws:cloudformation:*:*:stackset/CrowdStrike*
+   🟡 MEDIUM: This policy blocks 8 EventBridge permissions.
+      → Add exceptions for CrowdStrike EventBridge rules:
+        • Allow events:* on resources: arn:aws:events:*:*:rule/cs-*
+        • Allow events:* on resources: arn:aws:events:*:*:rule/CrowdStrike*
+   🟡 MEDIUM: This policy blocks 12 Lambda permissions.
+      → Add exceptions for CrowdStrike Lambda functions:
+        • Allow lambda:* on resources: arn:aws:lambda:*:*:function:CrowdStrike*
+
 
 🌍 REGION RESTRICTIONS:
-   Policy: policy-name (p-abcd1234)
+   Policy: block-region (p-987654)
    Attached to: OU
      🚫 Blocks regions: ap-south-1 (StringEquals on aws:RequestedRegion)
 
+
 💡 RECOMMENDATIONS:
-   ⚠️  SCP conflicts detected that may prevent CrowdStrike template deployment.
-   🔴 CRITICAL: CloudFormation permissions are blocked. The template cannot deploy stacks. Add exceptions for CloudFormation operations on CrowdStrike resources.
-   🟡 MEDIUM: Lambda permissions are blocked. Custom resources may fail. Add exceptions for Lambda functions with CrowdStrike naming.
-   🟡 MEDIUM: EventBridge permissions are blocked. Real-time monitoring may fail. Add exceptions for EventBridge rules with 'cs-' prefix.
-   🔴 CRITICAL: Region restrictions detected that may prevent deployment.
-   💡 TIP: For multi-region CrowdStrike deployments, ensure all required regions are allowed. Real-time Visibility and DSPM features require deployment across multiple regions.
+   
+   → Blocking policy is based on resource names:
+     • Use the ResourcePrefix and/or ResourceSuffix parameters in the template to apply your naming convention to CrowdStrike resources.
+
+   
+   → Blocking policy is based on AWS region:
+     • If you intend to protect this region with CrowdStrike CSPM, add an exception for CrowdStrike resources.
+     • If you do not intend to protect this region with CrowdStrike CSPM:
+       • Use the RealtimeVisibilityRegions and/or DSPMRegions parameters in the template to target your allowed regions.
+
+================================================================================
+📄 Results written to JSON file: fcs_scp_analysis_o-abc123.json
 ```
 
 ## Severity Levels
@@ -136,63 +202,12 @@ For example:
 - Organization `o-abc1234567` → `fcs_scp_analysis_o-abc1234567.json`
 - Standalone account `123456789012` → `fcs_scp_analysis_123456789012.json`
 
-### JSON Structure
+### JSON Output
 The JSON output file contains:
 - **Account Information**: Account ID, region, organization details
-- **Analysis Results**: Complete policy analysis with blocked actions and restrictions
-- **Service Breakdown**: Per-service analysis with blocked action counts
 - **Summary Statistics**: Total policies, severity, blocked services count
+- **Analysis Results**: Complete policy analysis with blocked actions and restrictions
 - **Policy Details**: Full policy content and metadata for each blocking policy
-
-### Example JSON Output
-```json
-{
-  "account_information": {
-    "account_id": "123456789012",
-    "region": "us-east-1",
-    "organization": {
-      "id": "o-abc1234567",
-      "master_account_id": "123456789012"
-    }
-  },
-  "analysis_results": {
-    "total_policies": 3,
-    "severity": "HIGH",
-    "blocking_policies": [
-      {
-        "policy": {
-          "id": "p-abcd1234",
-          "name": "policy-name",
-          "description": "",
-          "content": {
-            "Version": "2012-10-17",
-            "Statement": [ "Statement Details..." ]
-          },
-          "attached_to": "Root",
-          "target_id": "r-abcd",
-          "target_name": "Root"
-        }
-      }
-    ]
-    "blocked_actions": {
-      "iam": ["iam:CreateRole", "iam:AttachRolePolicy"],
-      "cloudformation": ["cloudformation:CreateStack"]
-    }
-  },
-  "service_breakdown": {
-    "iam": {
-      "total_actions": 16,
-      "blocked_actions": 2,
-      "status": "BLOCKED"
-    }
-  },
-  "summary": {
-    "severity": "HIGH",
-    "total_policies": 3,
-    "blocked_services_count": 2
-  }
-}
-```
 
 ## Exit Codes
 
@@ -249,7 +264,7 @@ The script returns different exit codes for automation:
   ]
 }
 ```
-**Impact**: This policy restricts all Cloudformation operations to only us-east-1 and us-west-2 regions. CrowdStrike's Real-time Visibility and DSPM features require deployment across all active regions.
+**Impact**: This policy restricts all Cloudformation operations to only us-east-1 and us-west-2 regions. CrowdStrike's Real-time Visibility and DSPM features require deployment across all active regions.  Use the RealtimeVisibilityRegions and/or DSPMRegions parameters in the template to target your allowed regions.
 
 
 
