@@ -7,7 +7,7 @@ This script analyzes Service Control Policies (SCPs) in an AWS account to determ
 if they would prevent the CrowdStrike CloudFormation template from deploying successfully.
 
 Usage:
-    python analyze_scp_crowdstrike.py [--profile PROFILE] [--region REGION] [--template-file TEMPLATE_FILE]
+    python analyze_scp_crowdstrike.py [--profile PROFILE] [--region REGION] [--template-file TEMPLATE_FILE] [feature options]
 """
 
 import argparse
@@ -102,14 +102,14 @@ class SCPAnalyzer:
 
             for target_id, target_type, target_name in all_targets:
                 try:
-                    print(f"   Checking {target_type}: {target_name} ({target_id})")
+                    # print(f"   Checking {target_type}: {target_name} ({target_id})")
                     response = org_client.list_policies_for_target(
                         TargetId=target_id,
                         Filter='SERVICE_CONTROL_POLICY'
                     )
 
                     if response['Policies']:
-                        print(f"     Found {len(response['Policies'])} policies")
+                        # print(f"     Found {len(response['Policies'])} policies")
 
                         for policy in response['Policies']:
                             if policy['Id'] not in policy_ids_seen:
@@ -125,17 +125,15 @@ class SCPAnalyzer:
                                     'target_name': target_name
                                 })
                                 policy_ids_seen.add(policy['Id'])
-                                print(f"     ✅ New policy: {policy['Name']} ({policy['Id']})")
-                            else:
-                                print(f"     🔄 Duplicate policy: {policy['Name']} ({policy['Id']})")
-                    else:
-                        print("     ⚪ No policies attached")
+                                # print(f"     ✅ New policy: {policy['Name']} ({policy['Id']})")
+                    # else:
+                        # print("     ⚪ No policies attached")
 
                 except ClientError as e:
                     if e.response['Error']['Code'] not in ['TargetNotFoundException', 'PolicyNotFoundException']:
                         print(f"     ❌ Error getting policies for {target_type} {target_id}: {e}")
 
-            print("\n📋 Organization-wide SCP Summary:")
+            print("\n📋 SCP Discovery Summary:")
             print(f"   Total targets checked: {len(all_targets)}")
             print(f"   Unique policies found: {len(policies)}")
             print(f"   Policy IDs: {list(policy_ids_seen)}")
@@ -166,7 +164,7 @@ class SCPAnalyzer:
             for account in accounts_response['Accounts']:
                 account_name = account.get('Name', account['Email'])
                 targets.append((account['Id'], 'Account', account_name))
-                print(f"     Found account: {account_name} ({account['Id']})")
+                # print(f"     Found account: {account_name} ({account['Id']})")
 
         except Exception as e:
             print(f"Error getting organization targets: {e}")
@@ -241,7 +239,7 @@ class SCPAnalyzer:
             print(f"📥 Fetching template from: {url}")
             response = requests.get(url, timeout=30)
             response.raise_for_status()
-            print(f"✅ Template fetched successfully ({len(response.text)} characters)")
+            # print(f"✅ Template fetched successfully ({len(response.text)} characters)")
             return response.text
         except requests.exceptions.RequestException as e:
             print(f"❌ Error fetching template from URL: {e}")
@@ -496,77 +494,122 @@ class SCPAnalyzer:
             results['severity'] = 'LOW'
         else:
             if results['blocked_actions']:
-                recommendations.append("⚠️  SCP conflicts detected that may prevent CrowdStrike template deployment.")
-
-                # Service-specific recommendations
-                if 'iam' in results['blocked_actions']:
-                    recommendations.append(
-                        "🔴 CRITICAL: IAM permissions are blocked. The template cannot create required roles. "
-                        "Consider adding an exception for CrowdStrike IAM resources."
-                    )
-
-                if 'cloudformation' in results['blocked_actions']:
-                    recommendations.append(
-                        "🔴 CRITICAL: CloudFormation permissions are blocked. The template cannot deploy stacks. "
-                        "Add exceptions for CloudFormation operations on CrowdStrike resources."
-                    )
-
-                if 'lambda' in results['blocked_actions']:
-                    recommendations.append(
-                        "🟡 MEDIUM: Lambda permissions are blocked. Custom resources may fail. "
-                        "Consider adding an exception for CrowdStrike Lambda resources."
-                    )
-
-                if 'events' in results['blocked_actions']:
-                    recommendations.append(
-                        "🟡 MEDIUM: EventBridge permissions are blocked. Real-time monitoring may fail. "
-                        "Add exceptions for EventBridge rules with 'cs-' prefix."
-                    )
-
-                if 'organizations' in results['blocked_actions']:
-                    recommendations.append(
-                        "🟡 MEDIUM: Organizations permissions are blocked. Multi-account deployment may fail. "
-                        "Add exceptions for Organizations read operations."
-                    )
-
-            # Region-specific recommendations
-            if results['region_restrictions']:
-                recommendations.append("🔴 CRITICAL: Region restrictions detected that may prevent deployment.")
-
-                common_crowdstrike_regions = ['us-east-1', 'us-west-2', 'eu-west-1', 'ap-southeast-1']
-
-                for restriction_info in results['region_restrictions']:
-                    for restriction in restriction_info['restrictions']:
-                        if restriction['type'] == 'allowed_regions':
-                            allowed_regions = restriction['values']
-                            blocked_cs_regions = [r for r in common_crowdstrike_regions if r not in allowed_regions]
-                            if blocked_cs_regions:
-                                recommendations.append(
-                                    f"🔴 CRITICAL: Only regions {', '.join(allowed_regions)} are allowed. "
-                                    f"CrowdStrike commonly uses regions: {', '.join(common_crowdstrike_regions)}. "
-                                    f"Consider adding these regions to your allowed list."
-                                )
-                        elif restriction['type'] == 'blocked_regions':
-                            blocked_regions = restriction['values']
-                            affected_cs_regions = [r for r in common_crowdstrike_regions if r in blocked_regions]
-                            if affected_cs_regions:
-                                recommendations.append(
-                                    f"🔴 CRITICAL: Regions {', '.join(blocked_regions)} are blocked. "
-                                    f"This affects CrowdStrike regions: {', '.join(affected_cs_regions)}. "
-                                    f"Consider adding exceptions for CrowdStrike resources in these regions."
-                                )
-
                 recommendations.append(
-                    "💡 TIP: When adding exceptions to naming restrictions for CrowdStrike "
-                    "IAM Roles and Lambda Functions: "
-                    "Use the ResourcePrefix and/or ResourceSuffix parameters in the template."
+                    "\n   → Blocking policy is based on resource names:"
+                    "\n     • Use the ResourcePrefix and/or ResourceSuffix parameters in the template to apply your naming convention to CrowdStrike resources.\n"
                 )
                 recommendations.append(
-                    "💡 TIP: For multi-region CrowdStrike deployments, ensure all required regions are allowed. "
-                    "Real-time Visibility and DSPM features require deployment across multiple regions."
+                    "\n   → Blocking policy is based on AWS region:"
+                    "\n     • If you intend to protect this region with CrowdStrike CSPM, add an exception for CrowdStrike resources."
+                    "\n     • If you do not intend to protect this region with CrowdStrike CSPM:"
+                    "\n       • Use the RealtimeVisibilityRegions and/or DSPMRegions parameters in the template to target your allowed regions."
                 )
 
         results['recommendations'] = recommendations
+
+    def generate_policy_specific_recommendations(self, blocked_actions: List[str]) -> List[str]:
+        """Generate specific recommendations for a policy based on its blocked actions"""
+        recommendations = []
+
+        # Group blocked actions by service
+        blocked_services = {}
+        for action in blocked_actions:
+            service = action.split(':')[0]
+            if service not in blocked_services:
+                blocked_services[service] = []
+            blocked_services[service].append(action)
+
+        # Generate service-specific recommendations
+        for service, actions in blocked_services.items():
+            if service == 'iam':
+                recommendations.append(
+                    f"🔴 CRITICAL: This policy blocks {len(actions)} IAM permissions required for CrowdStrike deployment."
+                )
+                recommendations.append(
+                    "   → Add exceptions for CrowdStrike IAM roles and policies:"
+                )
+                recommendations.append(
+                    "     • Allow iam:* on resources: arn:aws:iam::*:role/*CrowdStrike*"
+                )
+                recommendations.append(
+                    "     • Allow iam:* on resources: arn:aws:iam::*:policy/*CrowdStrike*"
+                )
+
+            elif service == 'cloudformation':
+                recommendations.append(
+                    f"🔴 CRITICAL: This policy blocks {len(actions)} CloudFormation permissions."
+                )
+                recommendations.append(
+                    "   → Add exceptions for CrowdStrike CloudFormation operations:"
+                )
+                recommendations.append(
+                    "     • Allow cloudformation:* on resources: arn:aws:cloudformation:*:*:stack/CrowdStrike*"
+                )
+                recommendations.append(
+                    "     • Allow cloudformation:* on resources: arn:aws:cloudformation:*:*:stackset/CrowdStrike*"
+                )
+
+            elif service == 'lambda':
+                recommendations.append(
+                    f"🟡 MEDIUM: This policy blocks {len(actions)} Lambda permissions."
+                )
+                recommendations.append(
+                    "   → Add exceptions for CrowdStrike Lambda functions:"
+                )
+                recommendations.append(
+                    "     • Allow lambda:* on resources: arn:aws:lambda:*:*:function:CrowdStrike*"
+                )
+
+            elif service == 'events':
+                recommendations.append(
+                    f"🟡 MEDIUM: This policy blocks {len(actions)} EventBridge permissions."
+                )
+                recommendations.append(
+                    "   → Add exceptions for CrowdStrike EventBridge rules:"
+                )
+                recommendations.append(
+                    "     • Allow events:* on resources: arn:aws:events:*:*:rule/cs-*"
+                )
+                recommendations.append(
+                    "     • Allow events:* on resources: arn:aws:events:*:*:rule/CrowdStrike*"
+                )
+
+            elif service == 'organizations':
+                recommendations.append(
+                    f"🟡 MEDIUM: This policy blocks {len(actions)} Organizations permissions."
+                )
+                recommendations.append(
+                    "   → Add exceptions for Organizations read operations:"
+                )
+                recommendations.append(
+                    "     • Allow organizations:Describe* and organizations:List*"
+                )
+
+            elif service == 's3':
+                recommendations.append(
+                    f"🟡 MEDIUM: This policy blocks {len(actions)} S3 permissions."
+                )
+                recommendations.append(
+                    "   → Add exceptions for CrowdStrike S3 operations (if needed for DSPM/RTV)"
+                )
+
+            elif service == 'logs':
+                recommendations.append(
+                    f"🟠 LOW: This policy blocks {len(actions)} CloudWatch Logs permissions."
+                )
+                recommendations.append(
+                    "   → Add exceptions for CrowdStrike log groups (may impact monitoring)"
+                )
+
+            # else:
+            #     recommendations.append(
+            #         f"🟠 INFO: This policy blocks {len(actions)} {service.upper()} permissions."
+            #     )
+            #     recommendations.append(
+            #         f"   → Review if {service} exceptions are needed for CrowdStrike functionality"
+            #     )
+
+        return recommendations
 
     def parse_cloudformation_template(self, template_content: str) -> Dict:
         """Parse CloudFormation template with support for intrinsic functions"""
@@ -615,46 +658,26 @@ class SCPAnalyzer:
                 print(f"Error with fallback parsing: {e2}")
                 return {}
 
-    def analyze_template_features(self, template_content: str) -> Dict:
-        """Analyze which features are enabled in the template"""
-        try:
-            template = self.parse_cloudformation_template(template_content)
-            features = {
-                'asset_inventory': False,
-                'sensor_management': False,
-                'realtime_visibility': False,
-                'dspm': False,
-                'organization_deployment': False
-            }
+    def analyze_template_features(self, features_from_args: Dict = None) -> Dict:
+        """Set features based on user arguments"""
+        # Default to all features enabled if no arguments provided
+        default_features = {
+            'asset_inventory': True,
+            'sensor_management': True,
+            'realtime_visibility': True,
+            'dspm': True,
+            'organization_deployment': True
+        }
 
-            resources = template.get('Resources', {})
-
-            # Check for different feature stacks
-            if 'AssetInventoryStack' in resources or 'AssetInventoryStackSet' in resources:
-                features['asset_inventory'] = True
-
-            if 'SensorManagementStack' in resources or 'SensorManagementStackSet' in resources:
-                features['sensor_management'] = True
-
-            if 'RealtimeVisibilityRootStack' in resources or 'RealtimeVisibilityStackSet' in resources:
-                features['realtime_visibility'] = True
-
-            if 'DSPMStack' in resources or 'DSPMStackSet' in resources:
-                features['dspm'] = True
-
-            # Check for organization deployment
-            if any('StackSet' in resource_name for resource_name in resources.keys()):
-                features['organization_deployment'] = True
-
-            return features
-        except Exception as e:
-            print(f"Error analyzing template features: {e}")
-            return {}
+        # Use provided features or defaults
+        if features_from_args is not None:
+            return features_from_args
+        return default_features
 
     def extract_permissions_from_template(self, template_content: str, base_url: str = None) -> Dict[str, List[str]]:
         """Extract actual AWS permissions required from CloudFormation template and all child templates"""
         try:
-            print("🔍 Parsing CloudFormation template to extract required permissions...")
+            # print("🔍 Parsing CloudFormation template to extract required permissions...")
 
             # Parse all templates recursively (main + child templates)
             all_permissions = self.extract_permissions_recursive(template_content, base_url, set())
@@ -714,7 +737,7 @@ class SCPAnalyzer:
         extracted_permissions = {}
         resources = template.get('Resources', {})
 
-        print(f"   📄 Analyzing template with {len(resources)} resources...")
+        # print(f"   📄 Analyzing template with {len(resources)} resources...")
 
         # Extract child template URLs
         child_template_urls = self.extract_child_template_urls(resources, base_url)
@@ -725,7 +748,7 @@ class SCPAnalyzer:
 
             if resource_type in cf_resource_permissions:
                 required_perms = cf_resource_permissions[resource_type]
-                print(f"     📋 Resource ({resource_type}): {len(required_perms)} permissions")
+                # print(f"     📋 Resource ({resource_type}): {len(required_perms)} permissions")
 
                 for perm in required_perms:
                     service = perm.split(':')[0]
@@ -744,17 +767,17 @@ class SCPAnalyzer:
                     extracted_permissions[service].append(perm)
 
         # Recursively process child templates
-        if child_template_urls:
-            print(f"   🔗 Found {len(child_template_urls)} child templates to process...")
+        # if child_template_urls:
+            # print(f"   🔗 Found {len(child_template_urls)} child templates to process...")
 
         for child_url in child_template_urls:
             if child_url not in processed_urls:
                 processed_urls.add(child_url)
-                print(f"   📥 Fetching child template: {child_url}")
+                # print(f"   📥 Fetching child template: {child_url}")
 
                 child_content = self.fetch_template_from_url(child_url)
                 if child_content:
-                    print(f"     ✅ Child template fetched ({len(child_content)} characters)")
+                    # print(f"     ✅ Child template fetched ({len(child_content)} characters)")
                     child_permissions = self.extract_permissions_recursive(
                         child_content, child_url, processed_urls
                     )
@@ -768,8 +791,8 @@ class SCPAnalyzer:
                                 extracted_permissions[service].append(perm)
                 else:
                     print(f"     ❌ Failed to fetch child template: {child_url}")
-            else:
-                print(f"   ⏭️  Skipping already processed template: {child_url}")
+            # else:
+                # print(f"   ⏭️  Skipping already processed template: {child_url}")
 
         # Add essential permissions that CloudFormation itself needs
         essential_permissions = {
@@ -930,7 +953,7 @@ class SCPAnalyzer:
     def print_detailed_report(self, results: Dict, template_features: Dict = None):
         """Print a detailed analysis report"""
         print("\n" + "=" * 80)
-        print("🛡️  CROWDSTRIKE CLOUDFORMATION TEMPLATE - SCP ANALYSIS REPORT")
+        print("🛡️  CROWDSTRIKE CSPM - SCP ANALYSIS REPORT")
         print("=" * 80)
 
         account_id = self.get_account_id()
@@ -944,12 +967,11 @@ class SCPAnalyzer:
         if org_info:
             print(f"   Organization ID: {org_info['id']}")
             print(f"   Master Account: {org_info['master_account_id']}")
-            print(f"   Feature Set: {org_info['feature_set']}")
         else:
             print("   Organization: Not part of an organization")
 
         if template_features:
-            print("\n🔧 TEMPLATE FEATURES DETECTED:")
+            print("\n🔧 ANALYZED CSPM FEATURES:")
             for feature, enabled in template_features.items():
                 status = "✅ Enabled" if enabled else "❌ Disabled"
                 print(f"   {feature.replace('_', ' ').title()}: {status}")
@@ -963,14 +985,27 @@ class SCPAnalyzer:
             print("\n📜 BLOCKING POLICIES:")
             for policy_info in results['blocking_policies']:
                 policy = policy_info['policy']
+                blocked_actions = policy_info['blocked_actions']
+
                 print(f"   Policy: {policy['name']} ({policy['id']})")
+                print(f"   Attached to: {policy['attached_to']}")
                 print(f"   Description: {policy.get('description', 'No description')}")
-                print(f"   Blocked Actions: {len(policy_info['blocked_actions'])}")
-                for action in policy_info['blocked_actions'][:5]:  # Show first 5
+                print(f"   Blocked Actions: {len(blocked_actions)}")
+
+                # Show first few blocked actions
+                for action in blocked_actions[:3]:  # Show first 3
                     print(f"     - {action}")
-                if len(policy_info['blocked_actions']) > 5:
-                    print(f"     ... and {len(policy_info['blocked_actions']) - 5} more")
-                print()
+                if len(blocked_actions) > 3:
+                    print(f"     ... and {len(blocked_actions) - 3} more")
+
+                # Generate and display policy-specific recommendations
+                policy_recommendations = self.generate_policy_specific_recommendations(blocked_actions)
+                if policy_recommendations:
+                    print("   🔧 Recommendations for this policy:")
+                    for rec in policy_recommendations:
+                        print(f"   {rec}")
+
+                print()  # Empty line between policies
 
         if results['region_restrictions']:
             print("\n🌍 REGION RESTRICTIONS:")
@@ -989,75 +1024,33 @@ class SCPAnalyzer:
 
         print("\n" + "=" * 80)
 
-    def generate_detailed_report_text(self, results: Dict, template_features: Dict = None) -> str:
-        """Generate detailed report as text string for file output"""
-        lines = []
-        lines.append("=" * 80)
-        lines.append("🛡️  CROWDSTRIKE CLOUDFORMATION TEMPLATE - SCP ANALYSIS REPORT")
-        lines.append("=" * 80)
-
-        account_id = self.get_account_id()
-        org_info = self.get_organization_info()
-
-        lines.append("\n📊 ACCOUNT INFORMATION:")
-        lines.append(f"   Account ID: {account_id}")
-        lines.append(f"   Region: {self.region}")
-        lines.append(f"   Profile: {self.profile or 'default'}")
-
-        if org_info:
-            lines.append(f"   Organization ID: {org_info['id']}")
-            lines.append(f"   Master Account: {org_info['master_account_id']}")
-            lines.append(f"   Feature Set: {org_info['feature_set']}")
-        else:
-            lines.append("   Organization: Not part of an organization")
-
-        if template_features:
-            lines.append("\n🔧 TEMPLATE FEATURES DETECTED:")
-            for feature, enabled in template_features.items():
-                status = "✅ Enabled" if enabled else "❌ Disabled"
-                lines.append(f"   {feature.replace('_', ' ').title()}: {status}")
-
-        lines.append("\n📋 SCP ANALYSIS RESULTS:")
-        lines.append(f"   Total Policies Analyzed: {results['total_policies']}")
-        lines.append(f"   Blocking Policies: {len(results['blocking_policies'])}")
-        lines.append(f"   Severity: {results['severity']}")
-
-        if results['blocking_policies']:
-            lines.append("\n📜 BLOCKING POLICIES:")
-            for policy_info in results['blocking_policies']:
-                policy = policy_info['policy']
-                lines.append(f"   Policy: {policy['name']} ({policy['id']})")
-                lines.append(f"   Description: {policy.get('description', 'No description')}")
-                lines.append(f"   Blocked Actions: {len(policy_info['blocked_actions'])}")
-                for action in policy_info['blocked_actions'][:5]:  # Show first 5
-                    lines.append(f"     - {action}")
-                if len(policy_info['blocked_actions']) > 5:
-                    lines.append(f"     ... and {len(policy_info['blocked_actions']) - 5} more")
-                lines.append("")
-
-        if results['region_restrictions']:
-            lines.append("\n🌍 REGION RESTRICTIONS:")
-            for restriction_info in results['region_restrictions']:
-                policy = restriction_info['policy']
-                lines.append(f"   Policy: {policy['name']} ({policy['id']})")
-                lines.append(f"   Attached to: {policy['attached_to']}")
-                for restriction in restriction_info['restrictions']:
-                    restriction_desc = self.describe_region_restriction(restriction)
-                    lines.append(f"     🚫 {restriction_desc}")
-                lines.append("")
-
-        lines.append("\n💡 RECOMMENDATIONS:")
-        for recommendation in results['recommendations']:
-            lines.append(f"   {recommendation}")
-
-        lines.append("\n" + "=" * 80)
-
-        return "\n".join(lines)
-
     def generate_json_report(self, results: Dict, template_features: Dict = None) -> Dict:
         """Generate comprehensive JSON report with all analysis data"""
         account_id = self.get_account_id()
         org_info = self.get_organization_info()
+
+        # Create a copy of results without blocked_actions for JSON output
+        # Also remove blocked_actions from each individual blocking policy
+        # But add policy-specific recommendations
+        cleaned_blocking_policies = []
+        for policy_info in results['blocking_policies']:
+            blocked_actions = policy_info.get('blocked_actions', [])
+            policy_recommendations = self.generate_policy_specific_recommendations(blocked_actions)
+
+            cleaned_policy = {
+                'policy': policy_info['policy'],
+                'recommendations': policy_recommendations
+                # blocked_actions removed
+            }
+            cleaned_blocking_policies.append(cleaned_policy)
+
+        analysis_results = {
+            'total_policies': results['total_policies'],
+            'blocking_policies': cleaned_blocking_policies,
+            'region_restrictions': results['region_restrictions'],
+            'severity': results['severity'],
+            'recommendations': results['recommendations']
+        }
 
         json_report = {
             "account_information": {
@@ -1066,29 +1059,15 @@ class SCPAnalyzer:
                 "profile": self.profile or 'default',
                 "organization": org_info
             },
-            "template_features": template_features or {},
-            "analysis_results": results,
-            "service_breakdown": {},
+            "analyzed_cspm_features": template_features or {},
             "summary": {
                 "severity": results['severity'],
                 "total_policies": results['total_policies'],
                 "blocking_policies_count": len(results['blocking_policies']),
-                "blocked_services_count": len(results['blocked_actions']),
-                "region_restrictions_count": len(results['region_restrictions']),
-                "total_blocked_actions": sum(len(actions) for actions in results['blocked_actions'].values())
-            }
+                "region_restrictions_count": len(results['region_restrictions'])
+            },
+            "analysis_results": analysis_results
         }
-
-        # Add service breakdown
-        for service, actions in self.template_permissions.items():
-            blocked_count = len(results['blocked_actions'].get(service, []))
-            total_count = len(actions)
-            json_report["service_breakdown"][service] = {
-                "total_actions": total_count,
-                "blocked_actions": blocked_count,
-                "blocked_action_list": results['blocked_actions'].get(service, []),
-                "status": "BLOCKED" if blocked_count > 0 else "ALLOWED"
-            }
 
         return json_report
 
@@ -1114,7 +1093,7 @@ class SCPAnalyzer:
         except Exception as e:
             print(f"❌ Error writing results to file: {e}")
 
-    def run_analysis(self, template_file: str = None) -> Tuple[Dict, Dict]:
+    def run_analysis(self, template_file: str = None, features: Dict = None) -> Tuple[Dict, Dict]:
         """Run the complete SCP analysis"""
         try:
             print("🔍 Starting SCP analysis for CrowdStrike template...")
@@ -1185,10 +1164,8 @@ class SCPAnalyzer:
             # Analyze policies (now using extracted permissions)
             results = self.analyze_policies(policies)
 
-            # Analyze template features
-            template_features = None
-            if template_content:
-                template_features = self.analyze_template_features(template_content)
+            # Set template features based on user arguments
+            template_features = self.analyze_template_features(features)
 
             # Print detailed report
             self.print_detailed_report(results, template_features)
@@ -1222,13 +1199,63 @@ def main():
         help='Path to CrowdStrike CloudFormation template file (default: fetch from URL)'
     )
 
+    # Feature control arguments - specify only the features you want to enable
+    parser.add_argument(
+        '--asset-inventory',
+        action='store_true',
+        help='Enable Asset Inventory feature'
+    )
+    parser.add_argument(
+        '--sensor-management',
+        action='store_true',
+        help='Enable Sensor Management feature'
+    )
+    parser.add_argument(
+        '--realtime-visibility',
+        action='store_true',
+        help='Enable Realtime Visibility feature'
+    )
+    parser.add_argument(
+        '--dspm',
+        action='store_true',
+        help='Enable DSPM (Data Security Posture Management) feature'
+    )
+    parser.add_argument(
+        '--organization-deployment',
+        action='store_true',
+        help='Enable Organization Deployment feature'
+    )
+
     args = parser.parse_args()
+
+    # Build features dictionary based on arguments
+    # Check if any feature flags are provided
+    feature_args_provided = any([
+        args.asset_inventory,
+        args.sensor_management,
+        args.realtime_visibility,
+        args.dspm,
+        args.organization_deployment
+    ])
+
+    if feature_args_provided:
+        # If any feature flags are provided, enable only those features, disable others
+        features = {
+            'asset_inventory': args.asset_inventory,
+            'sensor_management': args.sensor_management,
+            'realtime_visibility': args.realtime_visibility,
+            'dspm': args.dspm,
+            'organization_deployment': args.organization_deployment
+        }
+    else:
+        # No feature arguments provided - use None to let analyze_template_features use defaults (all enabled)
+        features = None
 
     # Initialize analyzer
     analyzer = SCPAnalyzer(profile=args.profile, region=args.region)
 
-    # Run analysis (returns both results and template_features)
-    results, template_features = analyzer.run_analysis(template_file=args.template_file)
+    # Run analysis with features configuration
+    results, template_features = analyzer.run_analysis(template_file=args.template_file, features=features)
 
     # Always write results to JSON file
     analyzer.write_results_to_file(results, template_features)
