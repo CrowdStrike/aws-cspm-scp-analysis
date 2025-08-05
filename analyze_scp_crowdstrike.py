@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# pylint: disable=C0301,C0302,E0401,R1702,R0911,R0912,R0903,R0904,R0914,W0621,W0404,C0415,W0718,R0901
+# pylint: disable=W293,C0301,C0302,E0401,R1702,R0911,R0912,R0903,R0904,R0914,W0621,W0404,C0415,W0718,R0901
 """
 CrowdStrike CloudFormation Template SCP Analysis Tool
 
@@ -239,7 +239,7 @@ class SCPAnalyzer:
             print(f"📥 Fetching template from: {url}")
             response = requests.get(url, timeout=30)
             response.raise_for_status()
-            #print(f"✅ Template fetched successfully ({len(response.text)} characters)")
+            # print(f"✅ Template fetched successfully ({len(response.text)} characters)")
             return response.text
         except requests.exceptions.RequestException as e:
             print(f"❌ Error fetching template from URL: {e}")
@@ -510,7 +510,7 @@ class SCPAnalyzer:
     def generate_policy_specific_recommendations(self, blocked_actions: List[str]) -> List[str]:
         """Generate specific recommendations for a policy based on its blocked actions"""
         recommendations = []
-        
+
         # Group blocked actions by service
         blocked_services = {}
         for action in blocked_actions:
@@ -518,7 +518,7 @@ class SCPAnalyzer:
             if service not in blocked_services:
                 blocked_services[service] = []
             blocked_services[service].append(action)
-        
+
         # Generate service-specific recommendations
         for service, actions in blocked_services.items():
             if service == 'iam':
@@ -534,7 +534,7 @@ class SCPAnalyzer:
                 recommendations.append(
                     "     • Allow iam:* on resources: arn:aws:iam::*:policy/*CrowdStrike*"
                 )
-                
+
             elif service == 'cloudformation':
                 recommendations.append(
                     f"🔴 CRITICAL: This policy blocks {len(actions)} CloudFormation permissions."
@@ -548,7 +548,7 @@ class SCPAnalyzer:
                 recommendations.append(
                     "     • Allow cloudformation:* on resources: arn:aws:cloudformation:*:*:stackset/CrowdStrike*"
                 )
-                
+
             elif service == 'lambda':
                 recommendations.append(
                     f"🟡 MEDIUM: This policy blocks {len(actions)} Lambda permissions."
@@ -559,7 +559,7 @@ class SCPAnalyzer:
                 recommendations.append(
                     "     • Allow lambda:* on resources: arn:aws:lambda:*:*:function:CrowdStrike*"
                 )
-                
+
             elif service == 'events':
                 recommendations.append(
                     f"🟡 MEDIUM: This policy blocks {len(actions)} EventBridge permissions."
@@ -573,7 +573,7 @@ class SCPAnalyzer:
                 recommendations.append(
                     "     • Allow events:* on resources: arn:aws:events:*:*:rule/CrowdStrike*"
                 )
-                
+
             elif service == 'organizations':
                 recommendations.append(
                     f"🟡 MEDIUM: This policy blocks {len(actions)} Organizations permissions."
@@ -584,7 +584,7 @@ class SCPAnalyzer:
                 recommendations.append(
                     "     • Allow organizations:Describe* and organizations:List*"
                 )
-                
+
             elif service == 's3':
                 recommendations.append(
                     f"🟡 MEDIUM: This policy blocks {len(actions)} S3 permissions."
@@ -592,7 +592,7 @@ class SCPAnalyzer:
                 recommendations.append(
                     "   → Add exceptions for CrowdStrike S3 operations (if needed for DSPM/RTV)"
                 )
-                
+
             elif service == 'logs':
                 recommendations.append(
                     f"🟠 LOW: This policy blocks {len(actions)} CloudWatch Logs permissions."
@@ -600,7 +600,7 @@ class SCPAnalyzer:
                 recommendations.append(
                     "   → Add exceptions for CrowdStrike log groups (may impact monitoring)"
                 )
-                
+
             # else:
             #     recommendations.append(
             #         f"🟠 INFO: This policy blocks {len(actions)} {service.upper()} permissions."
@@ -608,7 +608,7 @@ class SCPAnalyzer:
             #     recommendations.append(
             #         f"   → Review if {service} exceptions are needed for CrowdStrike functionality"
             #     )
-        
+
         return recommendations
 
     def parse_cloudformation_template(self, template_content: str) -> Dict:
@@ -987,25 +987,25 @@ class SCPAnalyzer:
             for policy_info in results['blocking_policies']:
                 policy = policy_info['policy']
                 blocked_actions = policy_info['blocked_actions']
-                
+
                 print(f"   Policy: {policy['name']} ({policy['id']})")
                 print(f"   Attached to: {policy['attached_to']}")
                 print(f"   Description: {policy.get('description', 'No description')}")
                 print(f"   Blocked Actions: {len(blocked_actions)}")
-                
+
                 # Show first few blocked actions
                 for action in blocked_actions[:3]:  # Show first 3
                     print(f"     - {action}")
                 if len(blocked_actions) > 3:
                     print(f"     ... and {len(blocked_actions) - 3} more")
-                
+
                 # Generate and display policy-specific recommendations
                 policy_recommendations = self.generate_policy_specific_recommendations(blocked_actions)
                 if policy_recommendations:
                     print("   🔧 Recommendations for this policy:")
                     for rec in policy_recommendations:
                         print(f"   {rec}")
-                
+
                 print()  # Empty line between policies
 
         if results['region_restrictions']:
@@ -1039,7 +1039,7 @@ class SCPAnalyzer:
         for policy_info in results['blocking_policies']:
             blocked_actions = policy_info.get('blocked_actions', [])
             policy_recommendations = self.generate_policy_specific_recommendations(blocked_actions)
-            
+
             cleaned_policy = {
                 'policy': policy_info['policy'],
                 'recommendations': policy_recommendations
@@ -1201,7 +1201,7 @@ def main():
         '--template-file',
         help='Path to CrowdStrike CloudFormation template file (default: fetch from URL)'
     )
-    
+
     # Feature control arguments - specify only the features you want to enable
     parser.add_argument(
         '--asset-inventory',
