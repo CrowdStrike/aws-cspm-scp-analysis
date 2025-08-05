@@ -1,4 +1,4 @@
-# CrowdStrike Falcon Cloud Security AWS SCP Analysis Tool
+# Falcon Cloud Security - AWS SCP Analysis Tool
 
 This tool analyzes Service Control Policies (SCPs) in your AWS Organization to determine if they would prevent CrowdStrike Falcon Cloud Security from deploying successfully.
 
@@ -26,12 +26,19 @@ The script analyzes permissions for these AWS services:
 
 ## Installation
 
-1. **Install Python dependencies:**
+1. **Download and Extract Repo:**
+```
+curl -L -o source.zip https://github.com/CrowdStrike/aws-cspm-scp-analysis/archive/refs/tags/v1.0.1.zip
+unzip source.zip
+cd aws-cspm-scp-analysis-1.0.1/
+```
+2. **Install Python dependencies:**
 ```bash
 pip install -r requirements.txt
 ```
 
-2. **Configure AWS credentials:**
+2. **Configure AWS credentials for AWS Org Management Account:**
+Skip this step if running in AWS CloudShell
 ```bash
 # Option 1: Using AWS CLI
 aws configure
