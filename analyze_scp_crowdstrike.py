@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# pylint: disable=W293,C0301,C0302,E0401,R1702,R0911,R0912,R0903,R0904,R0914,W0621,W0404,C0415,W0718,R0901
+# pylint: disable=C0301,C0302,E0401,R1702,R0911,R0912,R0903,R0904,R0914,W0621,W0404,C0415,W0718,R0901
 """
 CrowdStrike CloudFormation Template SCP Analysis Tool
 
@@ -672,8 +672,7 @@ class SCPAnalyzer:
         # Use provided features or defaults
         if features_from_args is not None:
             return features_from_args
-        else:
-            return default_features
+        return default_features
 
     def extract_permissions_from_template(self, template_content: str, base_url: str = None) -> Dict[str, List[str]]:
         """Extract actual AWS permissions required from CloudFormation template and all child templates"""
@@ -1024,8 +1023,6 @@ class SCPAnalyzer:
             print(f"   {recommendation}")
 
         print("\n" + "=" * 80)
-
-        return
 
     def generate_json_report(self, results: Dict, template_features: Dict = None) -> Dict:
         """Generate comprehensive JSON report with all analysis data"""
