@@ -21,7 +21,7 @@ import requests
 import yaml
 
 
-class SCPAnalyzer: # pylint: disable=R0904
+class SCPAnalyzer:  # pylint: disable=R0904
     """Analyzes Service Control Policies for CrowdStrike template compatibility"""
 
     # Default URL for CrowdStrike CloudFormation template
@@ -36,7 +36,7 @@ class SCPAnalyzer: # pylint: disable=R0904
             'organizations:DescribeOrganization',      # Check if account is in organization
             'organizations:ListRoots',                 # Get organization roots
             'organizations:ListOrganizationalUnitsForParent',  # Get OUs
-            'organizations:ListAccounts',              # Get organization accounts  
+            'organizations:ListAccounts',              # Get organization accounts
             'organizations:ListParents',               # Build account hierarchy
             'organizations:ListPoliciesForTarget',     # Get SCPs for targets
             'organizations:DescribePolicy'             # Get SCP content
@@ -116,7 +116,7 @@ class SCPAnalyzer: # pylint: disable=R0904
                     "Access denied to Organizations service",
                     "Required permissions:",
                     "  - organizations:DescribeOrganization",
-                    "  - organizations:ListRoots", 
+                    "  - organizations:ListRoots",
                     "  - organizations:ListOrganizationalUnitsForParent",
                     "  - organizations:ListAccounts",
                     "  - organizations:ListParents",
@@ -535,7 +535,7 @@ class SCPAnalyzer: # pylint: disable=R0904
         if condition_operator in ['StringEquals', 'ForAllValues:StringEquals', 'ForAnyValue:StringEquals']:
             return 'blocked_regions'  # Deny when region equals X = blocks region X
         if condition_operator in ['StringNotEquals', 'ForAllValues:StringNotEquals',
-                                    'ForAnyValue:StringNotEquals']:
+                                  'ForAnyValue:StringNotEquals']:
             return 'allowed_regions'  # Deny when region NOT equals X = allows only region X
         if condition_operator in ['StringLike', 'ForAllValues:StringLike', 'ForAnyValue:StringLike']:
             return 'blocked_regions_pattern'  # Deny when region like X = blocks regions matching X
@@ -543,6 +543,7 @@ class SCPAnalyzer: # pylint: disable=R0904
             return 'allowed_regions_pattern'  # Deny when region NOT like X = allows only regions matching X
 
         return None
+
     # Split into two functions to avoid "Too many return statements" (R0911)
     def get_allow_restriction_type(self, condition_operator: str) -> str:
         """Determine the type of restriction based on condition operator and statement effect"""
@@ -550,7 +551,7 @@ class SCPAnalyzer: # pylint: disable=R0904
         if condition_operator in ['StringEquals', 'ForAllValues:StringEquals', 'ForAnyValue:StringEquals']:
             return 'allowed_regions'
         if condition_operator in ['StringNotEquals', 'ForAllValues:StringNotEquals',
-                                    'ForAnyValue:StringNotEquals']:
+                                  'ForAnyValue:StringNotEquals']:
             return 'blocked_regions'
         if condition_operator in ['StringLike', 'ForAllValues:StringLike', 'ForAnyValue:StringLike']:
             return 'allowed_regions_pattern'
@@ -769,7 +770,7 @@ class SCPAnalyzer: # pylint: disable=R0904
         """Parse CloudFormation template with support for intrinsic functions"""
         try:
             # Create a custom YAML loader that can handle CloudFormation intrinsic functions
-            class CloudFormationLoader(yaml.SafeLoader): # pylint: disable=R0903
+            class CloudFormationLoader(yaml.SafeLoader):  # pylint: disable=R0903
                 """Custom YAML loader for CloudFormation templates with intrinsic function support"""
 
             # Add constructors for CloudFormation intrinsic functions
@@ -843,7 +844,7 @@ class SCPAnalyzer: # pylint: disable=R0904
             print("   Cannot analyze SCPs without template permissions.")
             return None
 
-    def extract_permissions_recursive(self, template_content: str, base_url: str = None, # pylint: disable=R0914
+    def extract_permissions_recursive(self, template_content: str, base_url: str = None,  # pylint: disable=R0914
                                       processed_urls: set = None) -> Dict[str, List[str]]:
         """Recursively extract permissions from template and all child templates"""
         if processed_urls is None:
@@ -1021,7 +1022,7 @@ class SCPAnalyzer: # pylint: disable=R0904
 
             # If we have a base URL, construct the full URL
             if base_url:
-                from urllib.parse import urljoin, urlparse # pylint: disable=C0415
+                from urllib.parse import urljoin, urlparse  # pylint: disable=C0415
 
                 # Parse base URL
                 parsed_base = urlparse(base_url)
@@ -1104,7 +1105,7 @@ class SCPAnalyzer: # pylint: disable=R0904
 
         return actions
 
-    def print_detailed_report(self, results: Dict, template_features: Dict = None): # pylint: disable=R0914
+    def print_detailed_report(self, results: Dict, template_features: Dict = None):  # pylint: disable=R0914
         """Print a detailed analysis report"""
         print("\n" + "=" * 80)
         print("🛡️  CROWDSTRIKE CSPM - SCP ANALYSIS REPORT")
@@ -1247,7 +1248,7 @@ class SCPAnalyzer: # pylint: disable=R0904
         except Exception as e:
             print(f"❌ Error writing results to file: {e}")
 
-    def run_analysis(self, template_file: str = None, features: Dict = None, validate_permissions: bool = True) -> Tuple[Dict, Dict]: # pylint: disable=R0914,R0915
+    def run_analysis(self, template_file: str = None, features: Dict = None, validate_permissions: bool = True) -> Tuple[Dict, Dict]:  # pylint: disable=R0914,R0915
         """Run the complete SCP analysis"""
         try:
             print("🔍 Starting SCP analysis for CrowdStrike template...")
