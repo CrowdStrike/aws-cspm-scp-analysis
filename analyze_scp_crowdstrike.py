@@ -770,7 +770,7 @@ class SCPAnalyzer:  # pylint: disable=R0904
         """Parse CloudFormation template with support for intrinsic functions"""
         try:
             # Create a custom YAML loader that can handle CloudFormation intrinsic functions
-            class CloudFormationLoader(yaml.SafeLoader):  # pylint: disable=R0903
+            class CloudFormationLoader(yaml.SafeLoader):  # pylint: disable=R0903,R0901
                 """Custom YAML loader for CloudFormation templates with intrinsic function support"""
 
             # Add constructors for CloudFormation intrinsic functions
