@@ -16,7 +16,7 @@ import re
 import sys
 from typing import Dict, List, Tuple
 import boto3
-from botocore.exceptions import ClientError, NoCredentialsError
+from botocore.exceptions import ClientError, NoCredentialsError, BotoCoreError
 import requests
 import yaml
 
@@ -26,6 +26,22 @@ class SCPAnalyzer:
 
     # Default URL for CrowdStrike CloudFormation template
     DEFAULT_TEMPLATE_URL = 'https://cs-prod-cloudconnect-templates.s3-us-west-1.amazonaws.com/modular/cs_aws_root.yaml'
+
+    # Required AWS permissions for this tool to function
+    REQUIRED_PERMISSIONS = {
+        'sts': [
+            'sts:GetCallerIdentity'  # Required to get account ID
+        ],
+        'organizations': [
+            'organizations:DescribeOrganization',      # Check if account is in organization
+            'organizations:ListRoots',                 # Get organization roots
+            'organizations:ListOrganizationalUnitsForParent',  # Get OUs
+            'organizations:ListAccounts',              # Get organization accounts  
+            'organizations:ListParents',               # Build account hierarchy
+            'organizations:ListPoliciesForTarget',     # Get SCPs for targets
+            'organizations:DescribePolicy'             # Get SCP content
+        ]
+    }
 
     def __init__(self, profile: str = None, region: str = 'us-east-1'):
         """Initialize the SCP analyzer with AWS credentials"""
@@ -59,13 +75,134 @@ class SCPAnalyzer:
             'arn:aws:cloudformation:*:*:stackset/CrowdStrike*'
         ]
 
+    def validate_permissions(self) -> Dict[str, List[str]]:
+        """Validate that the user has required AWS permissions"""
+        print("🔐 Validating AWS permissions...")
+        
+        permission_errors = {}
+        
+        # Test STS permissions
+        try:
+            sts_client = self.session.client('sts', region_name=self.region)
+            sts_client.get_caller_identity()
+            print("   ✅ STS permissions: OK")
+        except ClientError as e:
+            error_code = e.response.get('Error', {}).get('Code', 'Unknown')
+            if error_code in ['AccessDenied', 'UnauthorizedOperation']:
+                permission_errors['sts'] = [
+                    "Access denied to STS service",
+                    "Required permission: sts:GetCallerIdentity",
+                    "This permission is needed to identify your AWS account"
+                ]
+                print("   ❌ STS permissions: FAILED")
+            else:
+                permission_errors['sts'] = [f"STS error: {str(e)}"]
+                print(f"   ❌ STS permissions: ERROR - {str(e)}")
+        except Exception as e:
+            permission_errors['sts'] = [f"Unexpected STS error: {str(e)}"]
+            print(f"   ❌ STS permissions: UNEXPECTED ERROR - {str(e)}")
+        
+        # Test Organizations permissions
+        try:
+            org_client = self.session.client('organizations', region_name=self.region)
+            org_client.describe_organization()
+            print("   ✅ Organizations permissions: OK")
+        except ClientError as e:
+            error_code = e.response.get('Error', {}).get('Code', 'Unknown')
+            if error_code == 'AWSOrganizationsNotInUseException':
+                print("   ⚠️  Organizations: Account not in organization (this is OK)")
+            elif error_code in ['AccessDenied', 'UnauthorizedOperation']:
+                permission_errors['organizations'] = [
+                    "Access denied to Organizations service",
+                    "Required permissions:",
+                    "  - organizations:DescribeOrganization",
+                    "  - organizations:ListRoots", 
+                    "  - organizations:ListOrganizationalUnitsForParent",
+                    "  - organizations:ListAccounts",
+                    "  - organizations:ListParents",
+                    "  - organizations:ListPoliciesForTarget",
+                    "  - organizations:DescribePolicy",
+                    "These permissions are needed to analyze Service Control Policies"
+                ]
+                print("   ❌ Organizations permissions: FAILED")
+            else:
+                permission_errors['organizations'] = [f"Organizations error: {str(e)}"]
+                print(f"   ❌ Organizations permissions: ERROR - {str(e)}")
+        except Exception as e:
+            permission_errors['organizations'] = [f"Unexpected Organizations error: {str(e)}"]
+            print(f"   ❌ Organizations permissions: UNEXPECTED ERROR - {str(e)}")
+        
+        return permission_errors
+
+    def print_permission_requirements(self):
+        """Print detailed permission requirements for this tool"""
+        print("\n" + "=" * 80)
+        print("🔐 AWS PERMISSIONS REQUIRED FOR SCP ANALYSIS TOOL")
+        print("=" * 80)
+        
+        print("\n📋 ESSENTIAL PERMISSIONS (Required):")
+        print("   These permissions are required for the tool to function:")
+        print()
+        
+        for service, permissions in self.REQUIRED_PERMISSIONS.items():
+            print(f"   {service.upper()} Service:")
+            for perm in permissions:
+                print(f"     • {perm}")
+            print()
+        
+        print("📝 SAMPLE IAM POLICY:")
+        print("   You can use this IAM policy to grant the required permissions:")
+        print()
+        
+        # Generate sample IAM policy
+        all_actions = []
+        for permissions in self.REQUIRED_PERMISSIONS.values():
+            all_actions.extend(permissions)
+        
+        sample_policy = {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Action": sorted(all_actions),
+                    "Resource": "*"
+                }
+            ]
+        }
+        
+        print(json.dumps(sample_policy, indent=2))
+        
+        print("\n📌 PERMISSION NOTES:")
+        print("   • This tool is READ-ONLY and does not modify any AWS resources")
+        print("   • This tool requires an account that is part of an AWS Organization")
+        print("   • Service Control Policies (SCPs) only exist within AWS Organizations")
+        print("   • ALL permissions listed above are required for this tool to function")
+        
+        print("\n" + "=" * 80)
+
     def get_account_id(self) -> str:
         """Get current AWS account ID"""
         try:
             sts_client = self.session.client('sts', region_name=self.region)
             return sts_client.get_caller_identity()['Account']
+        except ClientError as e:
+            error_code = e.response.get('Error', {}).get('Code', 'Unknown')
+            if error_code in ['AccessDenied', 'UnauthorizedOperation']:
+                print("❌ Permission Error: Access denied to STS service")
+                print("   Required permission: sts:GetCallerIdentity")
+                print("   This permission is needed to identify your AWS account")
+            else:
+                print(f"❌ STS Error: {str(e)}")
+            return "unknown"
+        except NoCredentialsError:
+            print("❌ Credentials Error: No AWS credentials configured")
+            print("   Please configure your AWS credentials using:")
+            print("   • AWS CLI: aws configure")
+            print("   • Environment variables: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY")
+            print("   • IAM role (if running on EC2)")
+            return "unknown"
         except Exception as e:
-            print(f"Error getting account ID: {e}")
+            print(f"❌ Unexpected error getting account ID: {e}")
             return "unknown"
 
     def get_organization_info(self) -> Dict:
@@ -79,9 +216,19 @@ class SCPAnalyzer:
                 'feature_set': org_info['Organization']['FeatureSet']
             }
         except ClientError as e:
-            if e.response['Error']['Code'] == 'AWSOrganizationsNotInUseException':
+            error_code = e.response.get('Error', {}).get('Code', 'Unknown')
+            if error_code == 'AWSOrganizationsNotInUseException':
                 return None
-            print(f"Error getting organization info: {e}")
+            elif error_code in ['AccessDenied', 'UnauthorizedOperation']:
+                print("❌ Permission Error: Access denied to Organizations service")
+                print("   Required permission: organizations:DescribeOrganization")
+                print("   This permission is needed to check if account is part of an organization")
+                return None
+            else:
+                print(f"❌ Organizations Error: {str(e)}")
+                return None
+        except Exception as e:
+            print(f"❌ Unexpected error getting organization info: {e}")
             return None
 
     def get_all_organization_policies(self) -> List[Dict]:
@@ -1093,18 +1240,42 @@ class SCPAnalyzer:
         except Exception as e:
             print(f"❌ Error writing results to file: {e}")
 
-    def run_analysis(self, template_file: str = None, features: Dict = None) -> Tuple[Dict, Dict]:
+    def run_analysis(self, template_file: str = None, features: Dict = None, validate_permissions: bool = True) -> Tuple[Dict, Dict]:
         """Run the complete SCP analysis"""
         try:
             print("🔍 Starting SCP analysis for CrowdStrike template...")
 
+            # Validate permissions first (unless explicitly disabled)
+            if validate_permissions:
+                permission_errors = self.validate_permissions()
+                if permission_errors:
+                    print(f"\n❌ Permission validation failed!")
+                    for service, errors in permission_errors.items():
+                        print(f"\n{service.upper()} Service Issues:")
+                        for error in errors:
+                            print(f"   {error}")
+                    print(f"\nℹ️  Use --show-permissions to see detailed permission requirements")
+                    print(f"ℹ️  You can skip permission validation with --no-validate-permissions")
+                    return ({
+                        'severity': 'ERROR',
+                        'recommendations': ['❌ Permission validation failed. Required AWS permissions are missing.'],
+                        'blocked_actions': {},
+                        'total_policies': 0,
+                        'blocking_policies': []
+                    }, {})
+                else:
+                    print("✅ Permission validation passed\n")
+
             # Get organization info
             org_info = self.get_organization_info()
             if not org_info:
-                print("⚠️  Account is not part of an organization. SCPs may not apply.")
+                print("❌ ERROR: Account is not part of an AWS Organization.")
+                print("   Service Control Policies (SCPs) only exist within AWS Organizations.")
+                print("   This tool is designed to analyze SCPs for organization accounts.")
+                print("   Please run this tool from an account that is part of an AWS Organization.")
                 return ({
-                    'severity': 'LOW',
-                    'recommendations': ['✅ Account is not part of an organization. No SCP restrictions apply.'],
+                    'severity': 'ERROR',
+                    'recommendations': ['❌ Account must be part of an AWS Organization to analyze SCPs.'],
                     'blocked_actions': {},
                     'total_policies': 0,
                     'blocking_policies': []
@@ -1226,7 +1397,48 @@ def main():
         help='Enable Organization Deployment feature'
     )
 
+    # Permission and help arguments
+    parser.add_argument(
+        '--show-permissions',
+        action='store_true',
+        help='Show required AWS permissions for this tool and exit'
+    )
+    parser.add_argument(
+        '--check-permissions',
+        action='store_true',
+        help='Validate AWS permissions without running analysis'
+    )
+    parser.add_argument(
+        '--no-validate-permissions',
+        action='store_true',
+        help='Skip permission validation before running analysis'
+    )
+
     args = parser.parse_args()
+
+    # Handle permission-related arguments
+    if args.show_permissions:
+        # Show permissions and exit
+        analyzer = SCPAnalyzer(profile=args.profile, region=args.region)
+        analyzer.print_permission_requirements()
+        sys.exit(0)
+
+    if args.check_permissions:
+        # Check permissions and exit
+        analyzer = SCPAnalyzer(profile=args.profile, region=args.region)
+        permission_errors = analyzer.validate_permissions()
+        
+        if permission_errors:
+            print(f"\n❌ Permission validation failed!")
+            for service, errors in permission_errors.items():
+                print(f"\n{service.upper()} Service Issues:")
+                for error in errors:
+                    print(f"   {error}")
+            print(f"\nℹ️  Use --show-permissions to see detailed permission requirements")
+            sys.exit(1)
+        else:
+            print(f"\n✅ All required permissions validated successfully!")
+            sys.exit(0)
 
     # Build features dictionary based on arguments
     # Check if any feature flags are provided
@@ -1254,8 +1466,13 @@ def main():
     # Initialize analyzer
     analyzer = SCPAnalyzer(profile=args.profile, region=args.region)
 
-    # Run analysis with features configuration
-    results, template_features = analyzer.run_analysis(template_file=args.template_file, features=features)
+    # Run analysis with features configuration and permission validation
+    validate_perms = not args.no_validate_permissions  # Default is True unless --no-validate-permissions is used
+    results, template_features = analyzer.run_analysis(
+        template_file=args.template_file, 
+        features=features, 
+        validate_permissions=validate_perms
+    )
 
     # Always write results to JSON file
     analyzer.write_results_to_file(results, template_features)
