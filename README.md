@@ -13,16 +13,30 @@ CrowdStrike Falcon Cloud Security requires various AWS permissions to deploy suc
 
 ## Required Permissions
 
-The script analyzes permissions for these AWS services:
-- **IAM**: Role creation and management
-- **CloudFormation**: Stack and StackSet operations
-- **Lambda**: Function creation for custom resources
-- **EventBridge**: Rule creation for real-time monitoring
-- **CloudTrail**: Trail management for logging
-- **S3**: Bucket operations for log storage
-- **Organizations**: Multi-account deployment
-- **EC2**: Region discovery
-- **STS**: Cross-account role assumption
+This tool is READ-ONLY and does not modify any AWS resources but must have STS and Organizations permissions to complete the analysis.
+
+### Example IAM Policy
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "organizations:DescribeOrganization",
+        "organizations:DescribePolicy",
+        "organizations:ListAccounts",
+        "organizations:ListOrganizationalUnitsForParent",
+        "organizations:ListParents",
+        "organizations:ListPoliciesForTarget",
+        "organizations:ListRoots",
+        "sts:GetCallerIdentity"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
 
 ## Installation
 
@@ -60,6 +74,18 @@ python analyze_scp_crowdstrike.py
 ```
 *Note: The script automatically fetches the latest CrowdStrike template from the official S3 URL*
 
+### Permissions Management
+```bash
+# Show detailed permission requirements and exit
+python analyze_scp_crowdstrike.py --show-permissions
+
+# Validate permissions without running SCP analysis
+python analyze_scp_crowdstrike.py --check-permissions
+
+# Skip permission validation (not recommended)
+python analyze_scp_crowdstrike.py --no-validate-permissions
+```
+
 ### Advanced Usage
 ```bash
 # Use specific AWS profile
@@ -79,7 +105,6 @@ python analyze_scp_crowdstrike.py --asset-inventory --dspm
 
 # Enable multiple specific features
 python analyze_scp_crowdstrike.py --sensor-management --realtime-visibility
-
 ```
 
 ## Output Examples
