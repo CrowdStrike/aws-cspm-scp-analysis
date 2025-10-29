@@ -25,40 +25,40 @@ class SCPAnalyzer:  # pylint: disable=R0904
     """Analyzes Service Control Policies for CrowdStrike template compatibility"""
 
     # Default URL for CrowdStrike CloudFormation template
-    DEFAULT_TEMPLATE_URL = 'https://cs-prod-cloudconnect-templates.s3-us-west-1.amazonaws.com/modular/cs_aws_root.yaml'
+    DEFAULT_TEMPLATE_URL = "https://cs-prod-cloudconnect-templates.s3-us-west-1.amazonaws.com/modular/cs_aws_root.yaml"
 
     # Required AWS permissions for this tool to function
     REQUIRED_PERMISSIONS = {
-        'sts': [
-            'sts:GetCallerIdentity'  # Required to get account ID
+        "sts": [
+            "sts:GetCallerIdentity"  # Required to get account ID
         ],
-        'organizations': [
-            'organizations:DescribeOrganization',      # Check if account is in organization
-            'organizations:ListRoots',                 # Get organization roots
-            'organizations:ListOrganizationalUnitsForParent',  # Get OUs
-            'organizations:ListAccounts',              # Get organization accounts
-            'organizations:ListParents',               # Build account hierarchy
-            'organizations:ListPoliciesForTarget',     # Get SCPs for targets
-            'organizations:DescribePolicy'             # Get SCP content
-        ]
+        "organizations": [
+            "organizations:DescribeOrganization",  # Check if account is in organization
+            "organizations:ListRoots",  # Get organization roots
+            "organizations:ListOrganizationalUnitsForParent",  # Get OUs
+            "organizations:ListAccounts",  # Get organization accounts
+            "organizations:ListParents",  # Build account hierarchy
+            "organizations:ListPoliciesForTarget",  # Get SCPs for targets
+            "organizations:DescribePolicy",  # Get SCP content
+        ],
     }
 
-    def __init__(self, profile: str = None, region: str = 'us-east-1'):
+    def __init__(self, profile: str = None, region: str = "us-east-1"):
         """Initialize the SCP analyzer with AWS credentials"""
         self.profile = profile
         self.region = region
-        self.session = boto3.Session(profile_name=profile) if profile else boto3.Session()
+        self.session = (
+            boto3.Session(profile_name=profile) if profile else boto3.Session()
+        )
 
         # Essential permissions required for any CloudFormation deployment
         # These are minimal permissions needed regardless of template content
         self.essential_permissions = {
-            'cloudformation': [
-                'cloudformation:DescribeStacks',
-                'cloudformation:GetTemplate'
+            "cloudformation": [
+                "cloudformation:DescribeStacks",
+                "cloudformation:GetTemplate",
             ],
-            'sts': [
-                'sts:GetCallerIdentity'
-            ]
+            "sts": ["sts:GetCallerIdentity"],
         }
 
         # Will be populated from template analysis
@@ -66,13 +66,13 @@ class SCPAnalyzer:  # pylint: disable=R0904
 
         # Critical resource patterns that must be allowed
         self.critical_resource_patterns = [
-            'arn:aws:iam::*:role/CrowdStrike*',
-            'arn:aws:iam::*:role/*/CrowdStrike*',
-            'arn:aws:lambda:*:*:function:CrowdStrike*',
-            'arn:aws:events:*:*:rule/cs-*',
-            'arn:aws:events:*:*:rule/CrowdStrike*',
-            'arn:aws:cloudformation:*:*:stack/CrowdStrike*',
-            'arn:aws:cloudformation:*:*:stackset/CrowdStrike*'
+            "arn:aws:iam::*:role/CrowdStrike*",
+            "arn:aws:iam::*:role/*/CrowdStrike*",
+            "arn:aws:lambda:*:*:function:CrowdStrike*",
+            "arn:aws:events:*:*:rule/cs-*",
+            "arn:aws:events:*:*:rule/CrowdStrike*",
+            "arn:aws:cloudformation:*:*:stack/CrowdStrike*",
+            "arn:aws:cloudformation:*:*:stackset/CrowdStrike*",
         ]
 
     def validate_permissions(self) -> Dict[str, List[str]]:
@@ -83,36 +83,36 @@ class SCPAnalyzer:  # pylint: disable=R0904
 
         # Test STS permissions
         try:
-            sts_client = self.session.client('sts', region_name=self.region)
+            sts_client = self.session.client("sts", region_name=self.region)
             sts_client.get_caller_identity()
             print("   ✅ STS permissions: OK")
         except ClientError as e:
-            error_code = e.response.get('Error', {}).get('Code', 'Unknown')
-            if error_code in ['AccessDenied', 'UnauthorizedOperation']:
-                permission_errors['sts'] = [
+            error_code = e.response.get("Error", {}).get("Code", "Unknown")
+            if error_code in ["AccessDenied", "UnauthorizedOperation"]:
+                permission_errors["sts"] = [
                     "Access denied to STS service",
                     "Required permission: sts:GetCallerIdentity",
-                    "This permission is needed to identify your AWS account"
+                    "This permission is needed to identify your AWS account",
                 ]
                 print("   ❌ STS permissions: FAILED")
             else:
-                permission_errors['sts'] = [f"STS error: {str(e)}"]
+                permission_errors["sts"] = [f"STS error: {str(e)}"]
                 print(f"   ❌ STS permissions: ERROR - {str(e)}")
         except Exception as e:
-            permission_errors['sts'] = [f"Unexpected STS error: {str(e)}"]
+            permission_errors["sts"] = [f"Unexpected STS error: {str(e)}"]
             print(f"   ❌ STS permissions: UNEXPECTED ERROR - {str(e)}")
 
         # Test Organizations permissions
         try:
-            org_client = self.session.client('organizations', region_name=self.region)
+            org_client = self.session.client("organizations", region_name=self.region)
             org_client.describe_organization()
             print("   ✅ Organizations permissions: OK")
         except ClientError as e:
-            error_code = e.response.get('Error', {}).get('Code', 'Unknown')
-            if error_code == 'AWSOrganizationsNotInUseException':
+            error_code = e.response.get("Error", {}).get("Code", "Unknown")
+            if error_code == "AWSOrganizationsNotInUseException":
                 print("   ⚠️  Organizations: Account not in organization (this is OK)")
-            elif error_code in ['AccessDenied', 'UnauthorizedOperation']:
-                permission_errors['organizations'] = [
+            elif error_code in ["AccessDenied", "UnauthorizedOperation"]:
+                permission_errors["organizations"] = [
                     "Access denied to Organizations service",
                     "Required permissions:",
                     "  - organizations:DescribeOrganization",
@@ -122,14 +122,16 @@ class SCPAnalyzer:  # pylint: disable=R0904
                     "  - organizations:ListParents",
                     "  - organizations:ListPoliciesForTarget",
                     "  - organizations:DescribePolicy",
-                    "These permissions are needed to analyze Service Control Policies"
+                    "These permissions are needed to analyze Service Control Policies",
                 ]
                 print("   ❌ Organizations permissions: FAILED")
             else:
-                permission_errors['organizations'] = [f"Organizations error: {str(e)}"]
+                permission_errors["organizations"] = [f"Organizations error: {str(e)}"]
                 print(f"   ❌ Organizations permissions: ERROR - {str(e)}")
         except Exception as e:
-            permission_errors['organizations'] = [f"Unexpected Organizations error: {str(e)}"]
+            permission_errors["organizations"] = [
+                f"Unexpected Organizations error: {str(e)}"
+            ]
             print(f"   ❌ Organizations permissions: UNEXPECTED ERROR - {str(e)}")
 
         return permission_errors
@@ -162,12 +164,8 @@ class SCPAnalyzer:  # pylint: disable=R0904
         sample_policy = {
             "Version": "2012-10-17",
             "Statement": [
-                {
-                    "Effect": "Allow",
-                    "Action": sorted(all_actions),
-                    "Resource": "*"
-                }
-            ]
+                {"Effect": "Allow", "Action": sorted(all_actions), "Resource": "*"}
+            ],
         }
 
         print(json.dumps(sample_policy, indent=2))
@@ -175,19 +173,23 @@ class SCPAnalyzer:  # pylint: disable=R0904
         print("\n📌 PERMISSION NOTES:")
         print("   • This tool is READ-ONLY and does not modify any AWS resources")
         print("   • This tool requires an account that is part of an AWS Organization")
-        print("   • Service Control Policies (SCPs) only exist within AWS Organizations")
-        print("   • ALL permissions listed above are required for this tool to function")
+        print(
+            "   • Service Control Policies (SCPs) only exist within AWS Organizations"
+        )
+        print(
+            "   • ALL permissions listed above are required for this tool to function"
+        )
 
         print("\n" + "=" * 80)
 
     def get_account_id(self) -> str:
         """Get current AWS account ID"""
         try:
-            sts_client = self.session.client('sts', region_name=self.region)
-            return sts_client.get_caller_identity()['Account']
+            sts_client = self.session.client("sts", region_name=self.region)
+            return sts_client.get_caller_identity()["Account"]
         except ClientError as e:
-            error_code = e.response.get('Error', {}).get('Code', 'Unknown')
-            if error_code in ['AccessDenied', 'UnauthorizedOperation']:
+            error_code = e.response.get("Error", {}).get("Code", "Unknown")
+            if error_code in ["AccessDenied", "UnauthorizedOperation"]:
                 print("❌ Permission Error: Access denied to STS service")
                 print("   Required permission: sts:GetCallerIdentity")
                 print("   This permission is needed to identify your AWS account")
@@ -198,7 +200,9 @@ class SCPAnalyzer:  # pylint: disable=R0904
             print("❌ Credentials Error: No AWS credentials configured")
             print("   Please configure your AWS credentials using:")
             print("   • AWS CLI: aws configure")
-            print("   • Environment variables: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY")
+            print(
+                "   • Environment variables: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY"
+            )
             print("   • IAM role (if running on EC2)")
             return "unknown"
         except Exception as e:
@@ -208,21 +212,23 @@ class SCPAnalyzer:  # pylint: disable=R0904
     def get_organization_info(self) -> Dict:
         """Get organization information if account is part of an organization"""
         try:
-            org_client = self.session.client('organizations', region_name=self.region)
+            org_client = self.session.client("organizations", region_name=self.region)
             org_info = org_client.describe_organization()
             return {
-                'id': org_info['Organization']['Id'],
-                'master_account_id': org_info['Organization']['MasterAccountId'],
-                'feature_set': org_info['Organization']['FeatureSet']
+                "id": org_info["Organization"]["Id"],
+                "master_account_id": org_info["Organization"]["MasterAccountId"],
+                "feature_set": org_info["Organization"]["FeatureSet"],
             }
         except ClientError as e:
-            error_code = e.response.get('Error', {}).get('Code', 'Unknown')
-            if error_code == 'AWSOrganizationsNotInUseException':
+            error_code = e.response.get("Error", {}).get("Code", "Unknown")
+            if error_code == "AWSOrganizationsNotInUseException":
                 return None
-            if error_code in ['AccessDenied', 'UnauthorizedOperation']:
+            if error_code in ["AccessDenied", "UnauthorizedOperation"]:
                 print("❌ Permission Error: Access denied to Organizations service")
                 print("   Required permission: organizations:DescribeOrganization")
-                print("   This permission is needed to check if account is part of an organization")
+                print(
+                    "   This permission is needed to check if account is part of an organization"
+                )
                 return None
             print(f"❌ Organizations Error: {str(e)}")
             return None
@@ -233,7 +239,7 @@ class SCPAnalyzer:  # pylint: disable=R0904
     def get_all_organization_policies(self) -> List[Dict]:
         """Get ALL SCPs attached to any account, OU, or root in the organization"""
         try:
-            org_client = self.session.client('organizations', region_name=self.region)
+            org_client = self.session.client("organizations", region_name=self.region)
 
             policies = []
             policy_ids_seen = set()  # Avoid duplicates
@@ -250,34 +256,46 @@ class SCPAnalyzer:  # pylint: disable=R0904
                 try:
                     # print(f"   Checking {target_type}: {target_name} ({target_id})")
                     response = org_client.list_policies_for_target(
-                        TargetId=target_id,
-                        Filter='SERVICE_CONTROL_POLICY'
+                        TargetId=target_id, Filter="SERVICE_CONTROL_POLICY"
                     )
 
-                    if response['Policies']:
+                    if response["Policies"]:
                         # print(f"     Found {len(response['Policies'])} policies")
 
-                        for policy in response['Policies']:
-                            if policy['Id'] not in policy_ids_seen:
-                                policy_detail = org_client.describe_policy(PolicyId=policy['Id'])
-                                policy_content = json.loads(policy_detail['Policy']['Content'])
-                                policies.append({
-                                    'id': policy['Id'],
-                                    'name': policy['Name'],
-                                    'description': policy_detail['Policy']['PolicySummary'].get('Description', ''),
-                                    'content': policy_content,
-                                    'attached_to': target_type,
-                                    'target_id': target_id,
-                                    'target_name': target_name
-                                })
-                                policy_ids_seen.add(policy['Id'])
+                        for policy in response["Policies"]:
+                            if policy["Id"] not in policy_ids_seen:
+                                policy_detail = org_client.describe_policy(
+                                    PolicyId=policy["Id"]
+                                )
+                                policy_content = json.loads(
+                                    policy_detail["Policy"]["Content"]
+                                )
+                                policies.append(
+                                    {
+                                        "id": policy["Id"],
+                                        "name": policy["Name"],
+                                        "description": policy_detail["Policy"][
+                                            "PolicySummary"
+                                        ].get("Description", ""),
+                                        "content": policy_content,
+                                        "attached_to": target_type,
+                                        "target_id": target_id,
+                                        "target_name": target_name,
+                                    }
+                                )
+                                policy_ids_seen.add(policy["Id"])
                                 # print(f"     ✅ New policy: {policy['Name']} ({policy['Id']})")
                     # else:
-                        # print("     ⚪ No policies attached")
+                    # print("     ⚪ No policies attached")
 
                 except ClientError as e:
-                    if e.response['Error']['Code'] not in ['TargetNotFoundException', 'PolicyNotFoundException']:
-                        print(f"     ❌ Error getting policies for {target_type} {target_id}: {e}")
+                    if e.response["Error"]["Code"] not in [
+                        "TargetNotFoundException",
+                        "PolicyNotFoundException",
+                    ]:
+                        print(
+                            f"     ❌ Error getting policies for {target_type} {target_id}: {e}"
+                        )
 
             print("\n📋 SCP Discovery Summary:")
             print(f"   Total targets checked: {len(all_targets)}")
@@ -297,19 +315,19 @@ class SCPAnalyzer:  # pylint: disable=R0904
             # Get all roots
             print("   🌳 Getting organization roots...")
             roots_response = org_client.list_roots()
-            for root in roots_response['Roots']:
-                targets.append((root['Id'], 'Root', root['Name']))
+            for root in roots_response["Roots"]:
+                targets.append((root["Id"], "Root", root["Name"]))
                 print(f"     Found root: {root['Name']} ({root['Id']})")
 
                 # Get all OUs under this root recursively
-                self.get_all_ous_recursive(org_client, root['Id'], targets)
+                self.get_all_ous_recursive(org_client, root["Id"], targets)
 
             # Get all accounts
             print("   👥 Getting all organization accounts...")
             accounts_response = org_client.list_accounts()
-            for account in accounts_response['Accounts']:
-                account_name = account.get('Name', account['Email'])
-                targets.append((account['Id'], 'Account', account_name))
+            for account in accounts_response["Accounts"]:
+                account_name = account.get("Name", account["Email"])
+                targets.append((account["Id"], "Account", account_name))
                 # print(f"     Found account: {account_name} ({account['Id']})")
 
         except Exception as e:
@@ -317,22 +335,28 @@ class SCPAnalyzer:  # pylint: disable=R0904
 
         return targets
 
-    def get_all_ous_recursive(self, org_client, parent_id: str, targets: List[Tuple[str, str, str]]):
+    def get_all_ous_recursive(
+        self, org_client, parent_id: str, targets: List[Tuple[str, str, str]]
+    ):
         """Recursively get all OUs under a parent"""
         try:
-            response = org_client.list_organizational_units_for_parent(ParentId=parent_id)
-            for ou in response['OrganizationalUnits']:
-                targets.append((ou['Id'], 'OU', ou['Name']))
+            response = org_client.list_organizational_units_for_parent(
+                ParentId=parent_id
+            )
+            for ou in response["OrganizationalUnits"]:
+                targets.append((ou["Id"], "OU", ou["Name"]))
                 print(f"     Found OU: {ou['Name']} ({ou['Id']})")
 
                 # Recursively get child OUs
-                self.get_all_ous_recursive(org_client, ou['Id'], targets)
+                self.get_all_ous_recursive(org_client, ou["Id"], targets)
 
         except ClientError as e:
-            if e.response['Error']['Code'] != 'ParentNotFoundException':
+            if e.response["Error"]["Code"] != "ParentNotFoundException":
                 print(f"Error getting OUs for parent {parent_id}: {e}")
 
-    def get_account_hierarchy(self, account_id: str, org_client) -> List[Tuple[str, str]]:
+    def get_account_hierarchy(
+        self, account_id: str, org_client
+    ) -> List[Tuple[str, str]]:
         """Get all organizational targets that can affect this account (account, OUs, root)"""
         targets = []
 
@@ -352,24 +376,26 @@ class SCPAnalyzer:  # pylint: disable=R0904
                     # Get parents of current target
                     response = org_client.list_parents(ChildId=current_parent_id)
 
-                    if not response['Parents']:
+                    if not response["Parents"]:
                         break
 
-                    parent = response['Parents'][0]  # Account/OU should only have one parent
-                    parent_id = parent['Id']
-                    parent_type = parent['Type']
+                    parent = response["Parents"][
+                        0
+                    ]  # Account/OU should only have one parent
+                    parent_id = parent["Id"]
+                    parent_type = parent["Type"]
 
-                    if parent_type == 'ROOT':
+                    if parent_type == "ROOT":
                         targets.append((parent_id, "Root"))
                         break
-                    if parent_type == 'ORGANIZATIONAL_UNIT':
+                    if parent_type == "ORGANIZATIONAL_UNIT":
                         targets.append((parent_id, "OU"))
                         current_parent_id = parent_id
                         depth += 1
                     break
 
                 except ClientError as e:
-                    if e.response['Error']['Code'] == 'ParentNotFoundException':
+                    if e.response["Error"]["Code"] == "ParentNotFoundException":
                         break
                     print(f"   ❌ Error getting parent for {current_parent_id}: {e}")
                     break
@@ -393,12 +419,12 @@ class SCPAnalyzer:  # pylint: disable=R0904
 
     def parse_policy_statement(self, statement: Dict) -> Dict:
         """Parse a single policy statement"""
-        effect = statement.get('Effect', 'Allow')
-        actions = statement.get('Action', [])
-        not_actions = statement.get('NotAction', [])
-        resources = statement.get('Resource', ['*'])
-        not_resources = statement.get('NotResource', [])
-        conditions = statement.get('Condition', {})
+        effect = statement.get("Effect", "Allow")
+        actions = statement.get("Action", [])
+        not_actions = statement.get("NotAction", [])
+        resources = statement.get("Resource", ["*"])
+        not_resources = statement.get("NotResource", [])
+        conditions = statement.get("Condition", {})
 
         # Normalize actions to lists
         if isinstance(actions, str):
@@ -411,61 +437,69 @@ class SCPAnalyzer:  # pylint: disable=R0904
             not_resources = [not_resources]
 
         return {
-            'effect': effect,
-            'actions': actions,
-            'not_actions': not_actions,
-            'resources': resources,
-            'not_resources': not_resources,
-            'conditions': conditions
+            "effect": effect,
+            "actions": actions,
+            "not_actions": not_actions,
+            "resources": resources,
+            "not_resources": not_resources,
+            "conditions": conditions,
         }
 
     def action_matches_pattern(self, action: str, pattern: str) -> bool:
         """Check if an action matches a pattern (with wildcards)"""
-        if pattern == '*':
+        if pattern == "*":
             return True
 
         # Convert wildcard pattern to regex
-        regex_pattern = pattern.replace('*', '.*').replace('?', '.')
-        return bool(re.match(f'^{regex_pattern}$', action))
+        regex_pattern = pattern.replace("*", ".*").replace("?", ".")
+        return bool(re.match(f"^{regex_pattern}$", action))
 
     def resource_matches_pattern(self, resource: str, pattern: str) -> bool:
         """Check if a resource matches a pattern (with wildcards)"""
-        if pattern == '*':
+        if pattern == "*":
             return True
 
         # Convert wildcard pattern to regex
-        regex_pattern = pattern.replace('*', '.*').replace('?', '.')
-        return bool(re.match(f'^{regex_pattern}$', resource))
+        regex_pattern = pattern.replace("*", ".*").replace("?", ".")
+        return bool(re.match(f"^{regex_pattern}$", resource))
 
-    def analyze_statement_impact(self, statement: Dict, required_actions: List[str]) -> Dict:
+    def analyze_statement_impact(
+        self, statement: Dict, required_actions: List[str]
+    ) -> Dict:
         """Analyze the impact of a single policy statement on required actions"""
         parsed = self.parse_policy_statement(statement)
 
-        if parsed['effect'] == 'Allow':
+        if parsed["effect"] == "Allow":
             # Allow statements in SCPs don't grant permissions, they just don't deny them
-            return {'blocked_actions': [], 'allowed_actions': [], 'region_restrictions': []}
+            return {
+                "blocked_actions": [],
+                "allowed_actions": [],
+                "region_restrictions": [],
+            }
 
         # This is a Deny statement
         blocked_actions = []
         region_restrictions = []
 
         # Check for region restrictions in conditions (pass effect to get correct interpretation)
-        region_restrictions = self.analyze_region_restrictions(parsed['conditions'], parsed['effect'])
+        region_restrictions = self.analyze_region_restrictions(
+            parsed["conditions"], parsed["effect"]
+        )
 
         for action in required_actions:
             action_blocked = False
 
             # Check if action is explicitly denied
-            if parsed['actions']:
-                for action_pattern in parsed['actions']:
+            if parsed["actions"]:
+                for action_pattern in parsed["actions"]:
                     if self.action_matches_pattern(action, action_pattern):
                         action_blocked = True
                         break
 
             # Check if action is in NotAction (which means it's NOT denied)
-            if parsed['not_actions'] and not action_blocked:
+            if parsed["not_actions"] and not action_blocked:
                 action_in_not_actions = False
-                for not_action_pattern in parsed['not_actions']:
+                for not_action_pattern in parsed["not_actions"]:
                     if self.action_matches_pattern(action, not_action_pattern):
                         action_in_not_actions = True
                         break
@@ -477,20 +511,30 @@ class SCPAnalyzer:  # pylint: disable=R0904
             # Check resource constraints
             if action_blocked:
                 # Check if resources are restricted
-                if parsed['resources'] and '*' not in parsed['resources']:
+                if parsed["resources"] and "*" not in parsed["resources"]:
                     # Action is only blocked for specific resources
-                    for resource_pattern in parsed['resources']:
-                        if any(self.resource_matches_pattern(critical_resource, resource_pattern)
-                               for critical_resource in self.critical_resource_patterns):
+                    for resource_pattern in parsed["resources"]:
+                        if any(
+                            self.resource_matches_pattern(
+                                critical_resource, resource_pattern
+                            )
+                            for critical_resource in self.critical_resource_patterns
+                        ):
                             blocked_actions.append(action)
                             break
                 else:
                     # Action is blocked for all resources
                     blocked_actions.append(action)
 
-        return {'blocked_actions': blocked_actions, 'allowed_actions': [], 'region_restrictions': region_restrictions}
+        return {
+            "blocked_actions": blocked_actions,
+            "allowed_actions": [],
+            "region_restrictions": region_restrictions,
+        }
 
-    def analyze_region_restrictions(self, conditions: Dict, effect: str = 'Deny') -> List[Dict]:
+    def analyze_region_restrictions(
+        self, conditions: Dict, effect: str = "Deny"
+    ) -> List[Dict]:
         """Analyze condition blocks for region restrictions"""
         restrictions = []
 
@@ -499,11 +543,11 @@ class SCPAnalyzer:  # pylint: disable=R0904
 
         # Common region condition keys
         region_keys = [
-            'aws:RequestedRegion',
-            'aws:Region',
-            'ec2:Region',
-            'aws:RequestedRegion',
-            'iam:ResourceTag/aws:Region'
+            "aws:RequestedRegion",
+            "aws:Region",
+            "ec2:Region",
+            "aws:RequestedRegion",
+            "iam:ResourceTag/aws:Region",
         ]
 
         for condition_operator, condition_values in conditions.items():
@@ -514,17 +558,23 @@ class SCPAnalyzer:  # pylint: disable=R0904
                         if isinstance(values, str):
                             values = [values]
 
-                        if effect == 'Deny':
-                            restriction_type = self.get_deny_restriction_type(condition_operator)
+                        if effect == "Deny":
+                            restriction_type = self.get_deny_restriction_type(
+                                condition_operator
+                            )
                         else:
-                            restriction_type = self.get_allow_restriction_type(condition_operator)
+                            restriction_type = self.get_allow_restriction_type(
+                                condition_operator
+                            )
                         if restriction_type:
-                            restrictions.append({
-                                'type': restriction_type,
-                                'operator': condition_operator,
-                                'key': key,
-                                'values': values
-                            })
+                            restrictions.append(
+                                {
+                                    "type": restriction_type,
+                                    "operator": condition_operator,
+                                    "key": key,
+                                    "values": values,
+                                }
+                            )
 
         return restrictions
 
@@ -532,15 +582,30 @@ class SCPAnalyzer:  # pylint: disable=R0904
     def get_deny_restriction_type(self, condition_operator: str) -> str:
         """Determine the type of restriction based on condition operator and statement effect"""
         # For Deny statements, logic is reversed
-        if condition_operator in ['StringEquals', 'ForAllValues:StringEquals', 'ForAnyValue:StringEquals']:
-            return 'blocked_regions'  # Deny when region equals X = blocks region X
-        if condition_operator in ['StringNotEquals', 'ForAllValues:StringNotEquals',
-                                  'ForAnyValue:StringNotEquals']:
-            return 'allowed_regions'  # Deny when region NOT equals X = allows only region X
-        if condition_operator in ['StringLike', 'ForAllValues:StringLike', 'ForAnyValue:StringLike']:
-            return 'blocked_regions_pattern'  # Deny when region like X = blocks regions matching X
-        if condition_operator in ['StringNotLike', 'ForAllValues:StringNotLike', 'ForAnyValue:StringNotLike']:
-            return 'allowed_regions_pattern'  # Deny when region NOT like X = allows only regions matching X
+        if condition_operator in [
+            "StringEquals",
+            "ForAllValues:StringEquals",
+            "ForAnyValue:StringEquals",
+        ]:
+            return "blocked_regions"  # Deny when region equals X = blocks region X
+        if condition_operator in [
+            "StringNotEquals",
+            "ForAllValues:StringNotEquals",
+            "ForAnyValue:StringNotEquals",
+        ]:
+            return "allowed_regions"  # Deny when region NOT equals X = allows only region X
+        if condition_operator in [
+            "StringLike",
+            "ForAllValues:StringLike",
+            "ForAnyValue:StringLike",
+        ]:
+            return "blocked_regions_pattern"  # Deny when region like X = blocks regions matching X
+        if condition_operator in [
+            "StringNotLike",
+            "ForAllValues:StringNotLike",
+            "ForAnyValue:StringNotLike",
+        ]:
+            return "allowed_regions_pattern"  # Deny when region NOT like X = allows only regions matching X
 
         return None
 
@@ -548,46 +613,63 @@ class SCPAnalyzer:  # pylint: disable=R0904
     def get_allow_restriction_type(self, condition_operator: str) -> str:
         """Determine the type of restriction based on condition operator and statement effect"""
         # For Allow statements, logic is normal
-        if condition_operator in ['StringEquals', 'ForAllValues:StringEquals', 'ForAnyValue:StringEquals']:
-            return 'allowed_regions'
-        if condition_operator in ['StringNotEquals', 'ForAllValues:StringNotEquals',
-                                  'ForAnyValue:StringNotEquals']:
-            return 'blocked_regions'
-        if condition_operator in ['StringLike', 'ForAllValues:StringLike', 'ForAnyValue:StringLike']:
-            return 'allowed_regions_pattern'
-        if condition_operator in ['StringNotLike', 'ForAllValues:StringNotLike', 'ForAnyValue:StringNotLike']:
-            return 'blocked_regions_pattern'
+        if condition_operator in [
+            "StringEquals",
+            "ForAllValues:StringEquals",
+            "ForAnyValue:StringEquals",
+        ]:
+            return "allowed_regions"
+        if condition_operator in [
+            "StringNotEquals",
+            "ForAllValues:StringNotEquals",
+            "ForAnyValue:StringNotEquals",
+        ]:
+            return "blocked_regions"
+        if condition_operator in [
+            "StringLike",
+            "ForAllValues:StringLike",
+            "ForAnyValue:StringLike",
+        ]:
+            return "allowed_regions_pattern"
+        if condition_operator in [
+            "StringNotLike",
+            "ForAllValues:StringNotLike",
+            "ForAnyValue:StringNotLike",
+        ]:
+            return "blocked_regions_pattern"
 
         return None
 
     def describe_region_restriction(self, restriction: Dict) -> str:
         """Generate a human-readable description of a region restriction"""
-        restriction_type = restriction['type']
-        operator = restriction['operator']
-        key = restriction['key']
-        values = restriction['values']
+        restriction_type = restriction["type"]
+        operator = restriction["operator"]
+        key = restriction["key"]
+        values = restriction["values"]
 
-        values_str = ', '.join(values)
+        values_str = ", ".join(values)
 
-        if restriction_type == 'allowed_regions':
+        if restriction_type == "allowed_regions":
             return f"Only allows regions: {values_str} ({operator} on {key})"
-        if restriction_type == 'blocked_regions':
+        if restriction_type == "blocked_regions":
             return f"Blocks regions: {values_str} ({operator} on {key})"
-        if restriction_type == 'allowed_regions_pattern':
+        if restriction_type == "allowed_regions_pattern":
             return f"Only allows regions matching pattern: {values_str} ({operator} on {key})"
-        if restriction_type == 'blocked_regions_pattern':
-            return f"Blocks regions matching pattern: {values_str} ({operator} on {key})"
+        if restriction_type == "blocked_regions_pattern":
+            return (
+                f"Blocks regions matching pattern: {values_str} ({operator} on {key})"
+            )
         return f"Region restriction: {operator} on {key} with values {values_str}"
 
     def analyze_policies(self, policies: List[Dict]) -> Dict:
         """Analyze all policies for potential conflicts"""
         results = {
-            'total_policies': len(policies),
-            'blocking_policies': [],
-            'blocked_actions': {},
-            'region_restrictions': [],
-            'severity': 'LOW',
-            'recommendations': []
+            "total_policies": len(policies),
+            "blocking_policies": [],
+            "blocked_actions": {},
+            "region_restrictions": [],
+            "severity": "LOW",
+            "recommendations": [],
         }
 
         all_required_actions = []
@@ -598,42 +680,45 @@ class SCPAnalyzer:  # pylint: disable=R0904
             policy_blocked_actions = []
             policy_region_restrictions = []
 
-            for statement in policy['content'].get('Statement', []):
+            for statement in policy["content"].get("Statement", []):
                 impact = self.analyze_statement_impact(statement, all_required_actions)
-                policy_blocked_actions.extend(impact['blocked_actions'])
-                policy_region_restrictions.extend(impact['region_restrictions'])
+                policy_blocked_actions.extend(impact["blocked_actions"])
+                policy_region_restrictions.extend(impact["region_restrictions"])
 
             # Add blocking policies
             if policy_blocked_actions:
-                results['blocking_policies'].append({
-                    'policy': policy,
-                    'blocked_actions': list(set(policy_blocked_actions))
-                })
+                results["blocking_policies"].append(
+                    {
+                        "policy": policy,
+                        "blocked_actions": list(set(policy_blocked_actions)),
+                    }
+                )
 
                 for action in policy_blocked_actions:
-                    service = action.split(':')[0]
-                    if service not in results['blocked_actions']:
-                        results['blocked_actions'][service] = []
-                    if action not in results['blocked_actions'][service]:
-                        results['blocked_actions'][service].append(action)
+                    service = action.split(":")[0]
+                    if service not in results["blocked_actions"]:
+                        results["blocked_actions"][service] = []
+                    if action not in results["blocked_actions"][service]:
+                        results["blocked_actions"][service].append(action)
 
             # Add region restrictions
             if policy_region_restrictions:
-                results['region_restrictions'].append({
-                    'policy': policy,
-                    'restrictions': policy_region_restrictions
-                })
+                results["region_restrictions"].append(
+                    {"policy": policy, "restrictions": policy_region_restrictions}
+                )
 
         # Determine severity (consider region restrictions too)
-        if results['blocked_actions'] or results['region_restrictions']:
-            critical_services = ['iam', 'cloudformation', 'lambda']
-            if any(service in results['blocked_actions'] for service in critical_services):
-                results['severity'] = 'HIGH'
-            elif results['region_restrictions']:
+        if results["blocked_actions"] or results["region_restrictions"]:
+            critical_services = ["iam", "cloudformation", "lambda"]
+            if any(
+                service in results["blocked_actions"] for service in critical_services
+            ):
+                results["severity"] = "HIGH"
+            elif results["region_restrictions"]:
                 # Region restrictions can be critical for multi-region deployments
-                results['severity'] = 'HIGH'
+                results["severity"] = "HIGH"
             else:
-                results['severity'] = 'MEDIUM'
+                results["severity"] = "MEDIUM"
 
         # Generate recommendations
         self.generate_recommendations(results)
@@ -644,11 +729,13 @@ class SCPAnalyzer:  # pylint: disable=R0904
         """Generate recommendations based on analysis results"""
         recommendations = []
 
-        if not results['blocked_actions'] and not results['region_restrictions']:
-            recommendations.append("✅ No SCP conflicts detected. The CrowdStrike template should deploy successfully.")
-            results['severity'] = 'LOW'
+        if not results["blocked_actions"] and not results["region_restrictions"]:
+            recommendations.append(
+                "✅ No SCP conflicts detected. The CrowdStrike template should deploy successfully."
+            )
+            results["severity"] = "LOW"
         else:
-            if results['blocked_actions']:
+            if results["blocked_actions"]:
                 recommendations.append(
                     "\n   → Blocking policy is based on resource names:"
                     "\n     • Use the ResourcePrefix and/or ResourceSuffix parameters in the template to apply your naming convention to CrowdStrike resources.\n"
@@ -660,23 +747,25 @@ class SCPAnalyzer:  # pylint: disable=R0904
                     "\n       • Use the RealtimeVisibilityRegions and/or DSPMRegions parameters in the template to target your allowed regions."
                 )
 
-        results['recommendations'] = recommendations
+        results["recommendations"] = recommendations
 
-    def generate_policy_specific_recommendations(self, blocked_actions: List[str]) -> List[str]:
+    def generate_policy_specific_recommendations(
+        self, blocked_actions: List[str]
+    ) -> List[str]:
         """Generate specific recommendations for a policy based on its blocked actions"""
         recommendations = []
 
         # Group blocked actions by service
         blocked_services = {}
         for action in blocked_actions:
-            service = action.split(':')[0]
+            service = action.split(":")[0]
             if service not in blocked_services:
                 blocked_services[service] = []
             blocked_services[service].append(action)
 
         # Generate service-specific recommendations
         for service, actions in blocked_services.items():
-            if service == 'iam':
+            if service == "iam":
                 recommendations.append(
                     f"🔴 CRITICAL: This policy blocks {len(actions)} IAM permissions required for CrowdStrike deployment."
                 )
@@ -690,7 +779,7 @@ class SCPAnalyzer:  # pylint: disable=R0904
                     "     • Allow iam:* on resources: arn:aws:iam::*:policy/*CrowdStrike*"
                 )
 
-            elif service == 'cloudformation':
+            elif service == "cloudformation":
                 recommendations.append(
                     f"🔴 CRITICAL: This policy blocks {len(actions)} CloudFormation permissions."
                 )
@@ -704,7 +793,7 @@ class SCPAnalyzer:  # pylint: disable=R0904
                     "     • Allow cloudformation:* on resources: arn:aws:cloudformation:*:*:stackset/CrowdStrike*"
                 )
 
-            elif service == 'lambda':
+            elif service == "lambda":
                 recommendations.append(
                     f"🟡 MEDIUM: This policy blocks {len(actions)} Lambda permissions."
                 )
@@ -715,7 +804,7 @@ class SCPAnalyzer:  # pylint: disable=R0904
                     "     • Allow lambda:* on resources: arn:aws:lambda:*:*:function:CrowdStrike*"
                 )
 
-            elif service == 'events':
+            elif service == "events":
                 recommendations.append(
                     f"🟡 MEDIUM: This policy blocks {len(actions)} EventBridge permissions."
                 )
@@ -729,7 +818,7 @@ class SCPAnalyzer:  # pylint: disable=R0904
                     "     • Allow events:* on resources: arn:aws:events:*:*:rule/CrowdStrike*"
                 )
 
-            elif service == 'organizations':
+            elif service == "organizations":
                 recommendations.append(
                     f"🟡 MEDIUM: This policy blocks {len(actions)} Organizations permissions."
                 )
@@ -740,7 +829,7 @@ class SCPAnalyzer:  # pylint: disable=R0904
                     "     • Allow organizations:Describe* and organizations:List*"
                 )
 
-            elif service == 's3':
+            elif service == "s3":
                 recommendations.append(
                     f"🟡 MEDIUM: This policy blocks {len(actions)} S3 permissions."
                 )
@@ -748,7 +837,7 @@ class SCPAnalyzer:  # pylint: disable=R0904
                     "   → Add exceptions for CrowdStrike S3 operations (if needed for DSPM/RTV)"
                 )
 
-            elif service == 'logs':
+            elif service == "logs":
                 recommendations.append(
                     f"🟠 LOW: This policy blocks {len(actions)} CloudWatch Logs permissions."
                 )
@@ -777,24 +866,42 @@ class SCPAnalyzer:  # pylint: disable=R0904
             def construct_cloudformation_tag(loader, tag_suffix, node):
                 """Generic constructor for CloudFormation intrinsic functions"""
                 if isinstance(node, yaml.ScalarNode):
-                    return {'Fn::' + tag_suffix: loader.construct_scalar(node)}
+                    return {"Fn::" + tag_suffix: loader.construct_scalar(node)}
                 if isinstance(node, yaml.SequenceNode):
-                    return {'Fn::' + tag_suffix: loader.construct_sequence(node)}
+                    return {"Fn::" + tag_suffix: loader.construct_sequence(node)}
                 if isinstance(node, yaml.MappingNode):
-                    return {'Fn::' + tag_suffix: loader.construct_mapping(node)}
-                return {'Fn::' + tag_suffix: None}
+                    return {"Fn::" + tag_suffix: loader.construct_mapping(node)}
+                return {"Fn::" + tag_suffix: None}
 
             # CloudFormation intrinsic functions
             cf_tags = [
-                'Ref', 'GetAtt', 'GetAZs', 'ImportValue', 'Join', 'Split', 'Select', 'Sub',
-                'Base64', 'Cidr', 'FindInMap', 'GetRef', 'If', 'Not', 'And', 'Or', 'Equals',
-                'Condition', 'Transform'
+                "Ref",
+                "GetAtt",
+                "GetAZs",
+                "ImportValue",
+                "Join",
+                "Split",
+                "Select",
+                "Sub",
+                "Base64",
+                "Cidr",
+                "FindInMap",
+                "GetRef",
+                "If",
+                "Not",
+                "And",
+                "Or",
+                "Equals",
+                "Condition",
+                "Transform",
             ]
 
             for tag in cf_tags:
                 CloudFormationLoader.add_constructor(
-                    f'!{tag}',
-                    lambda loader, node, tag=tag: construct_cloudformation_tag(loader, tag, node)
+                    f"!{tag}",
+                    lambda loader, node, tag=tag: construct_cloudformation_tag(
+                        loader, tag, node
+                    ),
                 )
 
             # Parse the template with our custom loader
@@ -817,11 +924,11 @@ class SCPAnalyzer:  # pylint: disable=R0904
         """Set features based on user arguments"""
         # Default to all features enabled if no arguments provided
         default_features = {
-            'asset_inventory': True,
-            'sensor_management': True,
-            'realtime_visibility': True,
-            'dspm': True,
-            'organization_deployment': True
+            "asset_inventory": True,
+            "sensor_management": True,
+            "realtime_visibility": True,
+            "dspm": True,
+            "organization_deployment": True,
         }
 
         # Use provided features or defaults
@@ -829,13 +936,17 @@ class SCPAnalyzer:  # pylint: disable=R0904
             return features_from_args
         return default_features
 
-    def extract_permissions_from_template(self, template_content: str, base_url: str = None) -> Dict[str, List[str]]:
+    def extract_permissions_from_template(
+        self, template_content: str, base_url: str = None
+    ) -> Dict[str, List[str]]:
         """Extract actual AWS permissions required from CloudFormation template and all child templates"""
         try:
             # print("🔍 Parsing CloudFormation template to extract required permissions...")
 
             # Parse all templates recursively (main + child templates)
-            all_permissions = self.extract_permissions_recursive(template_content, base_url, set())
+            all_permissions = self.extract_permissions_recursive(
+                template_content, base_url, set()
+            )
 
             return all_permissions
 
@@ -844,8 +955,12 @@ class SCPAnalyzer:  # pylint: disable=R0904
             print("   Cannot analyze SCPs without template permissions.")
             return None
 
-    def extract_permissions_recursive(self, template_content: str, base_url: str = None,  # pylint: disable=R0914
-                                      processed_urls: set = None) -> Dict[str, List[str]]:
+    def extract_permissions_recursive(
+        self,
+        template_content: str,
+        base_url: str = None,  # pylint: disable=R0914
+        processed_urls: set = None,
+    ) -> Dict[str, List[str]]:
         """Recursively extract permissions from template and all child templates"""
         if processed_urls is None:
             processed_urls = set()
@@ -855,58 +970,137 @@ class SCPAnalyzer:  # pylint: disable=R0904
         if not template:
             return {}
 
+        # Extract RegionMap from template if it exists
+        region_map = template.get("Mappings", {}).get("RegionMap", {})
+
         # CloudFormation resource types to required AWS permissions mapping
         cf_resource_permissions = {
-            'AWS::IAM::Role': ['iam:CreateRole', 'iam:GetRole', 'iam:DeleteRole', 'iam:UpdateRole',
-                               'iam:PutRolePolicy', 'iam:AttachRolePolicy', 'iam:DetachRolePolicy',
-                               'iam:PassRole', 'iam:TagRole', 'iam:UntagRole'],
-            'AWS::IAM::Policy': ['iam:CreatePolicy', 'iam:GetPolicy', 'iam:DeletePolicy',
-                                 'iam:CreatePolicyVersion', 'iam:DeletePolicyVersion', 'iam:AttachRolePolicy'],
-            'AWS::IAM::InstanceProfile': ['iam:CreateInstanceProfile', 'iam:DeleteInstanceProfile',
-                                          'iam:AddRoleToInstanceProfile', 'iam:RemoveRoleFromInstanceProfile'],
-            'AWS::Lambda::Function': ['lambda:CreateFunction', 'lambda:DeleteFunction', 'lambda:UpdateFunctionCode',
-                                      'lambda:UpdateFunctionConfiguration', 'lambda:GetFunction', 'lambda:TagResource'],
-            'AWS::Events::Rule': ['events:PutRule', 'events:DeleteRule', 'events:PutTargets',
-                                  'events:RemoveTargets', 'events:DescribeRule'],
-            'AWS::CloudTrail::Trail': ['cloudtrail:CreateTrail', 'cloudtrail:DeleteTrail',
-                                       'cloudtrail:UpdateTrail', 'cloudtrail:StartLogging', 'cloudtrail:StopLogging'],
-            'AWS::S3::Bucket': ['s3:CreateBucket', 's3:DeleteBucket', 's3:PutBucketPolicy',
-                                's3:PutBucketAcl', 's3:GetBucketLocation'],
-            'AWS::CloudFormation::Stack': ['cloudformation:CreateStack', 'cloudformation:UpdateStack',
-                                           'cloudformation:DeleteStack', 'cloudformation:DescribeStacks'],
-            'AWS::CloudFormation::StackSet': ['cloudformation:CreateStackSet', 'cloudformation:UpdateStackSet',
-                                              'cloudformation:DeleteStackSet', 'cloudformation:CreateStackInstances',
-                                              'cloudformation:UpdateStackInstances', 'cloudformation:DeleteStackInstances'],
-            'AWS::Lambda::Permission': ['lambda:AddPermission', 'lambda:RemovePermission'],
-            'AWS::Events::Permission': ['events:PutPermission', 'events:RemovePermission'],
-            'AWS::Logs::LogGroup': ['logs:CreateLogGroup', 'logs:DeleteLogGroup', 'logs:PutRetentionPolicy'],
-            'AWS::SNS::Topic': ['sns:CreateTopic', 'sns:DeleteTopic', 'sns:SetTopicAttributes'],
-            'AWS::SQS::Queue': ['sqs:CreateQueue', 'sqs:DeleteQueue', 'sqs:SetQueueAttributes'],
-            'AWS::KMS::Key': ['kms:CreateKey', 'kms:DeleteKey', 'kms:PutKeyPolicy'],
-            'AWS::EC2::SecurityGroup': ['ec2:CreateSecurityGroup', 'ec2:DeleteSecurityGroup',
-                                        'ec2:AuthorizeSecurityGroupIngress'],
-            'AWS::SSM::Parameter': ['ssm:PutParameter', 'ssm:GetParameter', 'ssm:DeleteParameter']
+            "AWS::IAM::Role": [
+                "iam:CreateRole",
+                "iam:GetRole",
+                "iam:DeleteRole",
+                "iam:UpdateRole",
+                "iam:PutRolePolicy",
+                "iam:AttachRolePolicy",
+                "iam:DetachRolePolicy",
+                "iam:PassRole",
+                "iam:TagRole",
+                "iam:UntagRole",
+            ],
+            "AWS::IAM::Policy": [
+                "iam:CreatePolicy",
+                "iam:GetPolicy",
+                "iam:DeletePolicy",
+                "iam:CreatePolicyVersion",
+                "iam:DeletePolicyVersion",
+                "iam:AttachRolePolicy",
+            ],
+            "AWS::IAM::InstanceProfile": [
+                "iam:CreateInstanceProfile",
+                "iam:DeleteInstanceProfile",
+                "iam:AddRoleToInstanceProfile",
+                "iam:RemoveRoleFromInstanceProfile",
+            ],
+            "AWS::Lambda::Function": [
+                "lambda:CreateFunction",
+                "lambda:DeleteFunction",
+                "lambda:UpdateFunctionCode",
+                "lambda:UpdateFunctionConfiguration",
+                "lambda:GetFunction",
+                "lambda:TagResource",
+            ],
+            "AWS::Events::Rule": [
+                "events:PutRule",
+                "events:DeleteRule",
+                "events:PutTargets",
+                "events:RemoveTargets",
+                "events:DescribeRule",
+            ],
+            "AWS::CloudTrail::Trail": [
+                "cloudtrail:CreateTrail",
+                "cloudtrail:DeleteTrail",
+                "cloudtrail:UpdateTrail",
+                "cloudtrail:StartLogging",
+                "cloudtrail:StopLogging",
+            ],
+            "AWS::S3::Bucket": [
+                "s3:CreateBucket",
+                "s3:DeleteBucket",
+                "s3:PutBucketPolicy",
+                "s3:PutBucketAcl",
+                "s3:GetBucketLocation",
+            ],
+            "AWS::CloudFormation::Stack": [
+                "cloudformation:CreateStack",
+                "cloudformation:UpdateStack",
+                "cloudformation:DeleteStack",
+                "cloudformation:DescribeStacks",
+            ],
+            "AWS::CloudFormation::StackSet": [
+                "cloudformation:CreateStackSet",
+                "cloudformation:UpdateStackSet",
+                "cloudformation:DeleteStackSet",
+                "cloudformation:CreateStackInstances",
+                "cloudformation:UpdateStackInstances",
+                "cloudformation:DeleteStackInstances",
+            ],
+            "AWS::Lambda::Permission": [
+                "lambda:AddPermission",
+                "lambda:RemovePermission",
+            ],
+            "AWS::Events::Permission": [
+                "events:PutPermission",
+                "events:RemovePermission",
+            ],
+            "AWS::Logs::LogGroup": [
+                "logs:CreateLogGroup",
+                "logs:DeleteLogGroup",
+                "logs:PutRetentionPolicy",
+            ],
+            "AWS::SNS::Topic": [
+                "sns:CreateTopic",
+                "sns:DeleteTopic",
+                "sns:SetTopicAttributes",
+            ],
+            "AWS::SQS::Queue": [
+                "sqs:CreateQueue",
+                "sqs:DeleteQueue",
+                "sqs:SetQueueAttributes",
+            ],
+            "AWS::KMS::Key": ["kms:CreateKey", "kms:DeleteKey", "kms:PutKeyPolicy"],
+            "AWS::EC2::SecurityGroup": [
+                "ec2:CreateSecurityGroup",
+                "ec2:DeleteSecurityGroup",
+                "ec2:AuthorizeSecurityGroupIngress",
+            ],
+            "AWS::SSM::Parameter": [
+                "ssm:PutParameter",
+                "ssm:GetParameter",
+                "ssm:DeleteParameter",
+            ],
         }
 
         # Extract permissions from current template
         extracted_permissions = {}
-        resources = template.get('Resources', {})
+        resources = template.get("Resources", {})
 
         # print(f"   📄 Analyzing template with {len(resources)} resources...")
 
-        # Extract child template URLs
-        child_template_urls = self.extract_child_template_urls(resources, base_url)
+        # Extract child template URLs (pass region_map for variable resolution)
+        child_template_urls = self.extract_child_template_urls(
+            resources, base_url, region_map
+        )
 
         # Process resources in current template
         for _, resource_config in resources.items():
-            resource_type = resource_config.get('Type', '')
+            resource_type = resource_config.get("Type", "")
 
             if resource_type in cf_resource_permissions:
                 required_perms = cf_resource_permissions[resource_type]
                 # print(f"     📋 Resource ({resource_type}): {len(required_perms)} permissions")
 
                 for perm in required_perms:
-                    service = perm.split(':')[0]
+                    service = perm.split(":")[0]
                     if service not in extracted_permissions:
                         extracted_permissions[service] = []
                     if perm not in extracted_permissions[service]:
@@ -923,7 +1117,7 @@ class SCPAnalyzer:  # pylint: disable=R0904
 
         # Recursively process child templates
         # if child_template_urls:
-            # print(f"   🔗 Found {len(child_template_urls)} child templates to process...")
+        # print(f"   🔗 Found {len(child_template_urls)} child templates to process...")
 
         for child_url in child_template_urls:
             if child_url not in processed_urls:
@@ -947,13 +1141,16 @@ class SCPAnalyzer:  # pylint: disable=R0904
                 else:
                     print(f"     ❌ Failed to fetch child template: {child_url}")
             # else:
-                # print(f"   ⏭️  Skipping already processed template: {child_url}")
+            # print(f"   ⏭️  Skipping already processed template: {child_url}")
 
         # Add essential permissions that CloudFormation itself needs
         essential_permissions = {
-            'sts': ['sts:AssumeRole', 'sts:GetCallerIdentity'],
-            'ec2': ['ec2:DescribeRegions'],
-            'organizations': ['organizations:DescribeOrganization', 'organizations:ListAccounts']
+            "sts": ["sts:AssumeRole", "sts:GetCallerIdentity"],
+            "ec2": ["ec2:DescribeRegions"],
+            "organizations": [
+                "organizations:DescribeOrganization",
+                "organizations:ListAccounts",
+            ],
         }
 
         for service, perms in essential_permissions.items():
@@ -969,39 +1166,52 @@ class SCPAnalyzer:  # pylint: disable=R0904
 
         return extracted_permissions
 
-    def extract_child_template_urls(self, resources: Dict, base_url: str = None) -> List[str]:
+    def extract_child_template_urls(
+        self, resources: Dict, base_url: str = None, region_map: Dict = None
+    ) -> List[str]:
         """Extract TemplateURL properties from CloudFormation Stack and StackSet resources"""
         child_urls = []
 
         for resource_name, resource_config in resources.items():
-            resource_type = resource_config.get('Type', '')
+            resource_type = resource_config.get("Type", "")
 
-            if resource_type in ['AWS::CloudFormation::Stack', 'AWS::CloudFormation::StackSet']:
-                properties = resource_config.get('Properties', {})
-                template_url = properties.get('TemplateURL')
+            if resource_type in [
+                "AWS::CloudFormation::Stack",
+                "AWS::CloudFormation::StackSet",
+            ]:
+                properties = resource_config.get("Properties", {})
+                template_url = properties.get("TemplateURL")
 
                 if template_url:
                     # Handle CloudFormation intrinsic functions
                     if isinstance(template_url, dict):
                         # Try to extract URL from common intrinsic functions
-                        if 'Fn::Sub' in template_url:
-                            # For Fn::Sub, try to extract the template part
-                            sub_content = template_url['Fn::Sub']
-                            if isinstance(sub_content, str):
-                                template_url = sub_content
-                            elif isinstance(sub_content, list) and len(sub_content) > 0:
-                                template_url = sub_content[0]
-                        elif 'Fn::Join' in template_url:
+                        if "Fn::Sub" in template_url:
+                            # For Fn::Sub, resolve variables using current region context
+                            resolved_url = self.resolve_fn_sub_template_url(
+                                template_url["Fn::Sub"], region_map
+                            )
+                            if resolved_url:
+                                child_urls.append(resolved_url)
+                                print(
+                                    f"     🔗 Found child template: {resource_name} -> {resolved_url}"
+                                )
+                            continue
+                        elif "Fn::Join" in template_url:
                             # For Fn::Join, try to reconstruct the URL
-                            join_parts = template_url['Fn::Join']
+                            join_parts = template_url["Fn::Join"]
                             if isinstance(join_parts, list) and len(join_parts) == 2:
                                 delimiter = join_parts[0]
                                 parts = join_parts[1]
                                 if isinstance(parts, list):
-                                    template_url = delimiter.join(str(part) for part in parts)
+                                    template_url = delimiter.join(
+                                        str(part) for part in parts
+                                    )
                         # Skip other complex intrinsic functions for now
                         else:
-                            print(f"     ⚠️  Skipping complex intrinsic function in TemplateURL for {resource_name}")
+                            print(
+                                f"     ⚠️  Skipping complex intrinsic function in TemplateURL for {resource_name}"
+                            )
                             continue
 
                     if isinstance(template_url, str):
@@ -1009,15 +1219,86 @@ class SCPAnalyzer:  # pylint: disable=R0904
                         resolved_url = self.resolve_template_url(template_url, base_url)
                         if resolved_url:
                             child_urls.append(resolved_url)
-                            print(f"     🔗 Found child template: {resource_name} -> {resolved_url}")
+                            print(
+                                f"     🔗 Found child template: {resource_name} -> {resolved_url}"
+                            )
 
         return child_urls
+
+    def resolve_fn_sub_template_url(
+        self, fn_sub_content, region_map: Dict = None
+    ) -> str:
+        """Resolve Fn::Sub template URLs by replacing CloudFormation variables with actual values"""
+        try:
+            template_url = None
+            variables = {}
+
+            # Handle different Fn::Sub formats
+            if isinstance(fn_sub_content, str):
+                # Simple string substitution
+                template_url = fn_sub_content
+            elif isinstance(fn_sub_content, list) and len(fn_sub_content) >= 2:
+                # List format: [template_string, variables_dict]
+                template_url = fn_sub_content[0]
+                if isinstance(fn_sub_content[1], dict):
+                    variables = fn_sub_content[1]
+            else:
+                print(f"     ❌ Unsupported Fn::Sub format: {fn_sub_content}")
+                return None
+
+            if not isinstance(template_url, str):
+                return None
+
+            # Get current region from the analyzer's region setting
+            current_region = self.region
+
+            # Get region-specific values from RegionMap
+            region_prefix = None
+            bucket_region_id = None
+
+            if region_map and current_region in region_map:
+                region_data = region_map[current_region]
+                region_prefix = region_data.get("Prefix")
+                bucket_region_id = region_data.get("BucketRegionId")
+
+            # If we can't find the region in RegionMap, log it and return None
+            if not region_prefix or not bucket_region_id:
+                print(
+                    f"     ❌ Region {current_region} not found in RegionMap or missing data"
+                )
+                return None
+
+            # Replace CloudFormation variables with actual values
+            # ${Environment} -> "prod"
+            resolved_url = template_url.replace("${Environment}", "prod")
+
+            # ${RegionPrefix} -> region-specific prefix from RegionMap
+            resolved_url = resolved_url.replace("${RegionPrefix}", region_prefix)
+
+            # ${BucketRegionId} -> region-specific bucket ID from RegionMap
+            resolved_url = resolved_url.replace("${BucketRegionId}", bucket_region_id)
+
+            # ${AWS::Region} -> current AWS region
+            resolved_url = resolved_url.replace("${AWS::Region}", current_region)
+
+            # Handle any variables from the Fn::Sub variables dictionary
+            for var_name, var_value in variables.items():
+                resolved_url = resolved_url.replace(f"${{{var_name}}}", str(var_value))
+
+            print(f"     ✅ Resolved template URL: {resolved_url}")
+            return resolved_url
+
+        except Exception as e:
+            print(f"     ❌ Error resolving Fn::Sub template URL: {e}")
+            return None
 
     def resolve_template_url(self, template_url: str, base_url: str = None) -> str:
         """Resolve template URL, handling relative URLs"""
         try:
             # If it's already a full URL, return as-is
-            if template_url.startswith('http://') or template_url.startswith('https://'):
+            if template_url.startswith("http://") or template_url.startswith(
+                "https://"
+            ):
                 return template_url
 
             # If we have a base URL, construct the full URL
@@ -1028,17 +1309,17 @@ class SCPAnalyzer:  # pylint: disable=R0904
                 parsed_base = urlparse(base_url)
 
                 # If template_url starts with '/', it's absolute path
-                if template_url.startswith('/'):
+                if template_url.startswith("/"):
                     return f"{parsed_base.scheme}://{parsed_base.netloc}{template_url}"
 
                 # Otherwise, it's relative to the base URL directory
-                base_dir = '/'.join(base_url.split('/')[:-1]) + '/'
+                base_dir = "/".join(base_url.split("/")[:-1]) + "/"
                 return urljoin(base_dir, template_url)
 
             # Default CrowdStrike base URL if no base_url provided
-            default_base = 'https://cs-prod-cloudconnect-templates.s3-us-west-1.amazonaws.com/modular/'
+            default_base = "https://cs-prod-cloudconnect-templates.s3-us-west-1.amazonaws.com/modular/"
 
-            if template_url.startswith('/'):
+            if template_url.startswith("/"):
                 return f"https://cs-prod-cloudconnect-templates.s3-us-west-1.amazonaws.com{template_url}"
             return default_base + template_url
 
@@ -1051,31 +1332,31 @@ class SCPAnalyzer:  # pylint: disable=R0904
         policy_permissions = {}
 
         for _, resource_config in resources.items():
-            resource_type = resource_config.get('Type', '')
+            resource_type = resource_config.get("Type", "")
 
-            if resource_type == 'AWS::IAM::Role':
+            if resource_type == "AWS::IAM::Role":
                 # Check AssumeRolePolicyDocument and inline policies
-                properties = resource_config.get('Properties', {})
+                properties = resource_config.get("Properties", {})
 
                 # Extract from inline policies
-                policies = properties.get('Policies', [])
+                policies = properties.get("Policies", [])
                 for policy in policies:
-                    policy_doc = policy.get('PolicyDocument', {})
+                    policy_doc = policy.get("PolicyDocument", {})
                     permissions = self.extract_actions_from_policy_document(policy_doc)
                     for perm in permissions:
-                        service = perm.split(':')[0]
+                        service = perm.split(":")[0]
                         if service not in policy_permissions:
                             policy_permissions[service] = []
                         if perm not in policy_permissions[service]:
                             policy_permissions[service].append(perm)
 
-            elif resource_type == 'AWS::IAM::Policy':
+            elif resource_type == "AWS::IAM::Policy":
                 # Extract from standalone policies
-                properties = resource_config.get('Properties', {})
-                policy_doc = properties.get('PolicyDocument', {})
+                properties = resource_config.get("Properties", {})
+                policy_doc = properties.get("PolicyDocument", {})
                 permissions = self.extract_actions_from_policy_document(policy_doc)
                 for perm in permissions:
-                    service = perm.split(':')[0]
+                    service = perm.split(":")[0]
                     if service not in policy_permissions:
                         policy_permissions[service] = []
                     if perm not in policy_permissions[service]:
@@ -1087,20 +1368,24 @@ class SCPAnalyzer:  # pylint: disable=R0904
         """Extract AWS actions from an IAM policy document"""
         actions = []
 
-        statements = policy_doc.get('Statement', [])
+        statements = policy_doc.get("Statement", [])
         if not isinstance(statements, list):
             statements = [statements]
 
         for statement in statements:
             # Only extract from Allow statements (Deny statements don't indicate required permissions)
-            if statement.get('Effect') == 'Allow':
-                statement_actions = statement.get('Action', [])
+            if statement.get("Effect") == "Allow":
+                statement_actions = statement.get("Action", [])
                 if isinstance(statement_actions, str):
                     statement_actions = [statement_actions]
 
                 for action in statement_actions:
                     # Skip wildcard actions and CloudFormation intrinsic functions
-                    if isinstance(action, str) and ':' in action and not action.startswith('!'):
+                    if (
+                        isinstance(action, str)
+                        and ":" in action
+                        and not action.startswith("!")
+                    ):
                         actions.append(action)
 
         return actions
@@ -1136,11 +1421,11 @@ class SCPAnalyzer:  # pylint: disable=R0904
         print(f"   Blocking Policies: {len(results['blocking_policies'])}")
         print(f"   Severity: {results['severity']}")
 
-        if results['blocking_policies']:
+        if results["blocking_policies"]:
             print("\n📜 BLOCKING POLICIES:")
-            for policy_info in results['blocking_policies']:
-                policy = policy_info['policy']
-                blocked_actions = policy_info['blocked_actions']
+            for policy_info in results["blocking_policies"]:
+                policy = policy_info["policy"]
+                blocked_actions = policy_info["blocked_actions"]
 
                 print(f"   Policy: {policy['name']} ({policy['id']})")
                 print(f"   Attached to: {policy['attached_to']}")
@@ -1154,7 +1439,9 @@ class SCPAnalyzer:  # pylint: disable=R0904
                     print(f"     ... and {len(blocked_actions) - 3} more")
 
                 # Generate and display policy-specific recommendations
-                policy_recommendations = self.generate_policy_specific_recommendations(blocked_actions)
+                policy_recommendations = self.generate_policy_specific_recommendations(
+                    blocked_actions
+                )
                 if policy_recommendations:
                     print("   🔧 Recommendations for this policy:")
                     for rec in policy_recommendations:
@@ -1162,24 +1449,26 @@ class SCPAnalyzer:  # pylint: disable=R0904
 
                 print()  # Empty line between policies
 
-        if results['region_restrictions']:
+        if results["region_restrictions"]:
             print("\n🌍 REGION RESTRICTIONS:")
-            for restriction_info in results['region_restrictions']:
-                policy = restriction_info['policy']
+            for restriction_info in results["region_restrictions"]:
+                policy = restriction_info["policy"]
                 print(f"   Policy: {policy['name']} ({policy['id']})")
                 print(f"   Attached to: {policy['attached_to']}")
-                for restriction in restriction_info['restrictions']:
+                for restriction in restriction_info["restrictions"]:
                     restriction_desc = self.describe_region_restriction(restriction)
                     print(f"     🚫 {restriction_desc}")
                 print()
 
         print("\n💡 RECOMMENDATIONS:")
-        for recommendation in results['recommendations']:
+        for recommendation in results["recommendations"]:
             print(f"   {recommendation}")
 
         print("\n" + "=" * 80)
 
-    def generate_json_report(self, results: Dict, template_features: Dict = None) -> Dict:
+    def generate_json_report(
+        self, results: Dict, template_features: Dict = None
+    ) -> Dict:
         """Generate comprehensive JSON report with all analysis data"""
         account_id = self.get_account_id()
         org_info = self.get_organization_info()
@@ -1188,40 +1477,42 @@ class SCPAnalyzer:  # pylint: disable=R0904
         # Also remove blocked_actions from each individual blocking policy
         # But add policy-specific recommendations
         cleaned_blocking_policies = []
-        for policy_info in results['blocking_policies']:
-            blocked_actions = policy_info.get('blocked_actions', [])
-            policy_recommendations = self.generate_policy_specific_recommendations(blocked_actions)
+        for policy_info in results["blocking_policies"]:
+            blocked_actions = policy_info.get("blocked_actions", [])
+            policy_recommendations = self.generate_policy_specific_recommendations(
+                blocked_actions
+            )
 
             cleaned_policy = {
-                'policy': policy_info['policy'],
-                'recommendations': policy_recommendations
+                "policy": policy_info["policy"],
+                "recommendations": policy_recommendations,
                 # blocked_actions removed
             }
             cleaned_blocking_policies.append(cleaned_policy)
 
         analysis_results = {
-            'total_policies': results['total_policies'],
-            'blocking_policies': cleaned_blocking_policies,
-            'region_restrictions': results['region_restrictions'],
-            'severity': results['severity'],
-            'recommendations': results['recommendations']
+            "total_policies": results["total_policies"],
+            "blocking_policies": cleaned_blocking_policies,
+            "region_restrictions": results["region_restrictions"],
+            "severity": results["severity"],
+            "recommendations": results["recommendations"],
         }
 
         json_report = {
             "account_information": {
                 "account_id": account_id,
                 "region": self.region,
-                "profile": self.profile or 'default',
-                "organization": org_info
+                "profile": self.profile or "default",
+                "organization": org_info,
             },
             "analyzed_cspm_features": template_features or {},
             "summary": {
-                "severity": results['severity'],
-                "total_policies": results['total_policies'],
-                "blocking_policies_count": len(results['blocking_policies']),
-                "region_restrictions_count": len(results['region_restrictions'])
+                "severity": results["severity"],
+                "total_policies": results["total_policies"],
+                "blocking_policies_count": len(results["blocking_policies"]),
+                "region_restrictions_count": len(results["region_restrictions"]),
             },
-            "analysis_results": analysis_results
+            "analysis_results": analysis_results,
         }
 
         return json_report
@@ -1232,7 +1523,7 @@ class SCPAnalyzer:  # pylint: disable=R0904
             # Get organization info to generate filename
             org_info = self.get_organization_info()
             if org_info:
-                org_id = org_info['id']
+                org_id = org_info["id"]
                 filename = f"fcs_scp_analysis_{org_id}.json"
             else:
                 # Fallback if not in an organization
@@ -1241,14 +1532,19 @@ class SCPAnalyzer:  # pylint: disable=R0904
 
             # Always write JSON format
             json_report = self.generate_json_report(results, template_features)
-            with open(filename, 'w', encoding='utf-8') as f:
+            with open(filename, "w", encoding="utf-8") as f:
                 json.dump(json_report, f, indent=2, ensure_ascii=False)
             print(f"📄 Results written to JSON file: {filename}")
 
         except Exception as e:
             print(f"❌ Error writing results to file: {e}")
 
-    def run_analysis(self, template_file: str = None, features: Dict = None, validate_permissions: bool = True) -> Tuple[Dict, Dict]:  # pylint: disable=R0914,R0915
+    def run_analysis(
+        self,
+        template_file: str = None,
+        features: Dict = None,
+        validate_permissions: bool = True,
+    ) -> Tuple[Dict, Dict]:  # pylint: disable=R0914,R0915
         """Run the complete SCP analysis"""
         try:
             print("🔍 Starting SCP analysis for CrowdStrike template...")
@@ -1262,31 +1558,51 @@ class SCPAnalyzer:  # pylint: disable=R0904
                         print(f"\n{service.upper()} Service Issues:")
                         for error in errors:
                             print(f"   {error}")
-                    print("\nℹ️  Use --show-permissions to see detailed permission requirements")
-                    print("ℹ️  You can skip permission validation with --no-validate-permissions")
-                    return ({
-                        'severity': 'ERROR',
-                        'recommendations': ['❌ Permission validation failed. Required AWS permissions are missing.'],
-                        'blocked_actions': {},
-                        'total_policies': 0,
-                        'blocking_policies': []
-                    }, {})
+                    print(
+                        "\nℹ️  Use --show-permissions to see detailed permission requirements"
+                    )
+                    print(
+                        "ℹ️  You can skip permission validation with --no-validate-permissions"
+                    )
+                    return (
+                        {
+                            "severity": "ERROR",
+                            "recommendations": [
+                                "❌ Permission validation failed. Required AWS permissions are missing."
+                            ],
+                            "blocked_actions": {},
+                            "total_policies": 0,
+                            "blocking_policies": [],
+                        },
+                        {},
+                    )
                 print("✅ Permission validation passed\n")
 
             # Get organization info
             org_info = self.get_organization_info()
             if not org_info:
                 print("❌ ERROR: Account is not part of an AWS Organization.")
-                print("   Service Control Policies (SCPs) only exist within AWS Organizations.")
-                print("   This tool is designed to analyze SCPs for organization accounts.")
-                print("   Please run this tool from an account that is part of an AWS Organization.")
-                return ({
-                    'severity': 'ERROR',
-                    'recommendations': ['❌ Account must be part of an AWS Organization to analyze SCPs.'],
-                    'blocked_actions': {},
-                    'total_policies': 0,
-                    'blocking_policies': []
-                }, {})
+                print(
+                    "   Service Control Policies (SCPs) only exist within AWS Organizations."
+                )
+                print(
+                    "   This tool is designed to analyze SCPs for organization accounts."
+                )
+                print(
+                    "   Please run this tool from an account that is part of an AWS Organization."
+                )
+                return (
+                    {
+                        "severity": "ERROR",
+                        "recommendations": [
+                            "❌ Account must be part of an AWS Organization to analyze SCPs."
+                        ],
+                        "blocked_actions": {},
+                        "total_policies": 0,
+                        "blocking_policies": [],
+                    },
+                    {},
+                )
 
             # Get template content and extract permissions
             template_content = None
@@ -1296,16 +1612,20 @@ class SCPAnalyzer:  # pylint: disable=R0904
                 # Use provided template file
                 try:
                     print(f"📖 Reading template from file: {template_file}")
-                    with open(template_file, 'r', encoding='utf-8') as f:
+                    with open(template_file, "r", encoding="utf-8") as f:
                         template_content = f.read()
                     # Extract permissions from template (no base_url needed for local files)
-                    extracted_permissions = self.extract_permissions_from_template(template_content)
+                    extracted_permissions = self.extract_permissions_from_template(
+                        template_content
+                    )
                 except Exception as e:
                     print(f"Warning: Could not read template file: {e}")
                     print("   Falling back to hardcoded permissions...")
             else:
                 # Fetch template from URL
-                template_content = self.fetch_template_from_url(self.DEFAULT_TEMPLATE_URL)
+                template_content = self.fetch_template_from_url(
+                    self.DEFAULT_TEMPLATE_URL
+                )
                 if template_content:
                     # Extract permissions from template (pass base_url for child template resolution)
                     extracted_permissions = self.extract_permissions_from_template(
@@ -1318,26 +1638,38 @@ class SCPAnalyzer:  # pylint: disable=R0904
                 self.template_permissions = extracted_permissions
             else:
                 print("❌ ERROR: Cannot analyze SCPs without template permissions.")
-                print("   Please ensure you have a valid CrowdStrike template file or URL access.")
-                return ({
-                    'severity': 'ERROR',
-                    'recommendations': ['❌ Template analysis failed. Cannot determine required permissions.'],
-                    'blocked_actions': {},
-                    'total_policies': 0,
-                    'blocking_policies': []
-                }, {})
+                print(
+                    "   Please ensure you have a valid CrowdStrike template file or URL access."
+                )
+                return (
+                    {
+                        "severity": "ERROR",
+                        "recommendations": [
+                            "❌ Template analysis failed. Cannot determine required permissions."
+                        ],
+                        "blocked_actions": {},
+                        "total_policies": 0,
+                        "blocking_policies": [],
+                    },
+                    {},
+                )
 
             # Get all organization policies
             policies = self.get_all_organization_policies()
             if not policies:
                 print("ℹ️  No Service Control Policies found in the organization.")
-                return ({
-                    'severity': 'LOW',
-                    'recommendations': ['✅ No Service Control Policies found in the organization.'],
-                    'blocked_actions': {},
-                    'total_policies': 0,
-                    'blocking_policies': []
-                }, {})
+                return (
+                    {
+                        "severity": "LOW",
+                        "recommendations": [
+                            "✅ No Service Control Policies found in the organization."
+                        ],
+                        "blocked_actions": {},
+                        "total_policies": 0,
+                        "blocking_policies": [],
+                    },
+                    {},
+                )
 
             # Analyze policies (now using extracted permissions)
             results = self.analyze_policies(policies)
@@ -1351,7 +1683,9 @@ class SCPAnalyzer:  # pylint: disable=R0904
             return (results, template_features)
 
         except NoCredentialsError:
-            print("❌ Error: No AWS credentials configured. Please configure your credentials.")
+            print(
+                "❌ Error: No AWS credentials configured. Please configure your credentials."
+            )
             sys.exit(1)
         except Exception as e:
             print(f"❌ Error during analysis: {e}")
@@ -1363,62 +1697,55 @@ def main():
     parser = argparse.ArgumentParser(
         description="Analyze Service Control Policies for CrowdStrike CloudFormation template compatibility"
     )
+    parser.add_argument("--profile", help="AWS profile to use for authentication")
     parser.add_argument(
-        '--profile',
-        help='AWS profile to use for authentication'
+        "--region", default="us-east-1", help="AWS region (default: us-east-1)"
     )
     parser.add_argument(
-        '--region',
-        default='us-east-1',
-        help='AWS region (default: us-east-1)'
-    )
-    parser.add_argument(
-        '--template-file',
-        help='Path to CrowdStrike CloudFormation template file (default: fetch from URL)'
+        "--template-file",
+        help="Path to CrowdStrike CloudFormation template file (default: fetch from URL)",
     )
 
     # Feature control arguments - specify only the features you want to enable
     parser.add_argument(
-        '--asset-inventory',
-        action='store_true',
-        help='Enable Asset Inventory feature'
+        "--asset-inventory", action="store_true", help="Enable Asset Inventory feature"
     )
     parser.add_argument(
-        '--sensor-management',
-        action='store_true',
-        help='Enable Sensor Management feature'
+        "--sensor-management",
+        action="store_true",
+        help="Enable Sensor Management feature",
     )
     parser.add_argument(
-        '--realtime-visibility',
-        action='store_true',
-        help='Enable Realtime Visibility feature'
+        "--realtime-visibility",
+        action="store_true",
+        help="Enable Realtime Visibility feature",
     )
     parser.add_argument(
-        '--dspm',
-        action='store_true',
-        help='Enable DSPM (Data Security Posture Management) feature'
+        "--dspm",
+        action="store_true",
+        help="Enable DSPM (Data Security Posture Management) feature",
     )
     parser.add_argument(
-        '--organization-deployment',
-        action='store_true',
-        help='Enable Organization Deployment feature'
+        "--organization-deployment",
+        action="store_true",
+        help="Enable Organization Deployment feature",
     )
 
     # Permission and help arguments
     parser.add_argument(
-        '--show-permissions',
-        action='store_true',
-        help='Show required AWS permissions for this tool and exit'
+        "--show-permissions",
+        action="store_true",
+        help="Show required AWS permissions for this tool and exit",
     )
     parser.add_argument(
-        '--check-permissions',
-        action='store_true',
-        help='Validate AWS permissions without running analysis'
+        "--check-permissions",
+        action="store_true",
+        help="Validate AWS permissions without running analysis",
     )
     parser.add_argument(
-        '--no-validate-permissions',
-        action='store_true',
-        help='Skip permission validation before running analysis'
+        "--no-validate-permissions",
+        action="store_true",
+        help="Skip permission validation before running analysis",
     )
 
     args = parser.parse_args()
@@ -1449,22 +1776,24 @@ def main():
 
     # Build features dictionary based on arguments
     # Check if any feature flags are provided
-    feature_args_provided = any([
-        args.asset_inventory,
-        args.sensor_management,
-        args.realtime_visibility,
-        args.dspm,
-        args.organization_deployment
-    ])
+    feature_args_provided = any(
+        [
+            args.asset_inventory,
+            args.sensor_management,
+            args.realtime_visibility,
+            args.dspm,
+            args.organization_deployment,
+        ]
+    )
 
     if feature_args_provided:
         # If any feature flags are provided, enable only those features, disable others
         features = {
-            'asset_inventory': args.asset_inventory,
-            'sensor_management': args.sensor_management,
-            'realtime_visibility': args.realtime_visibility,
-            'dspm': args.dspm,
-            'organization_deployment': args.organization_deployment
+            "asset_inventory": args.asset_inventory,
+            "sensor_management": args.sensor_management,
+            "realtime_visibility": args.realtime_visibility,
+            "dspm": args.dspm,
+            "organization_deployment": args.organization_deployment,
         }
     else:
         # No feature arguments provided - use None to let analyze_template_features use defaults (all enabled)
@@ -1474,24 +1803,26 @@ def main():
     analyzer = SCPAnalyzer(profile=args.profile, region=args.region)
 
     # Run analysis with features configuration and permission validation
-    validate_perms = not args.no_validate_permissions  # Default is True unless --no-validate-permissions is used
+    validate_perms = (
+        not args.no_validate_permissions
+    )  # Default is True unless --no-validate-permissions is used
     results, template_features = analyzer.run_analysis(
         template_file=args.template_file,
         features=features,
-        validate_permissions=validate_perms
+        validate_permissions=validate_perms,
     )
 
     # Always write results to JSON file
     analyzer.write_results_to_file(results, template_features)
 
     # Exit with appropriate code
-    if results['severity'] == 'HIGH':
+    if results["severity"] == "HIGH":
         sys.exit(2)
-    elif results['severity'] == 'MEDIUM':
+    elif results["severity"] == "MEDIUM":
         sys.exit(1)
     else:
         sys.exit(0)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
