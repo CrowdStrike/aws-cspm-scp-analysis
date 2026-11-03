@@ -11,14 +11,48 @@ Usage:
 """
 
 import argparse
+import ipaddress
 import json
 import re
+import socket
 import sys
+from urllib.parse import urlparse
 from typing import Dict, List, Tuple
 import boto3
 from botocore.exceptions import ClientError, NoCredentialsError
 import requests
 import yaml
+
+
+_BLOCKED_NETWORKS = [
+    ipaddress.ip_network("169.254.0.0/16"),  # link-local / AWS IMDS
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("::1/128"),
+    ipaddress.ip_network("fc00::/7"),
+]
+
+
+def _is_safe_template_url(url: str) -> bool:
+    """Return True only for HTTPS URLs pointing to AWS S3 with a non-private resolved IP."""
+    try:
+        parsed = urlparse(url)
+        if parsed.scheme != "https":
+            return False
+        host = parsed.hostname or ""
+        # Must resolve to an amazonaws.com hostname (covers all S3 regional variants)
+        if not (host.endswith(".amazonaws.com") or host.endswith(".amazonaws.com.cn")):
+            return False
+        # Resolve to IP and block private/link-local ranges (SSRF guard)
+        resolved = ipaddress.ip_address(socket.gethostbyname(host))
+        for net in _BLOCKED_NETWORKS:
+            if resolved in net:
+                return False
+        return True
+    except Exception:  # resolution failure, malformed URL, etc.
+        return False
 
 
 class SCPAnalyzer:  # pylint: disable=R0904
@@ -408,8 +442,11 @@ class SCPAnalyzer:  # pylint: disable=R0904
     def fetch_template_from_url(self, url: str) -> str:
         """Fetch the CloudFormation template from the given URL"""
         try:
+            if not _is_safe_template_url(url):
+                print(f"❌ Rejected template URL (must be HTTPS S3 endpoint): {url}")
+                return None
             print(f"📥 Fetching template from: {url}")
-            response = requests.get(url, timeout=30)
+            response = requests.get(url, timeout=30, allow_redirects=False)
             response.raise_for_status()
             # print(f"✅ Template fetched successfully ({len(response.text)} characters)")
             return response.text
@@ -904,8 +941,11 @@ class SCPAnalyzer:  # pylint: disable=R0904
                     ),
                 )
 
-            # Parse the template with our custom loader
-            # This is safe because CloudFormationLoader inherits from yaml.SafeLoader
+            # Parse the template with our custom loader.
+            # Safe: CloudFormationLoader subclasses yaml.SafeLoader (see line ~862) and its
+            # constructors only produce plain dicts — no !!python/object or arbitrary
+            # class instantiation is possible.  The nosec suppresses Bandit B506 which
+            # pattern-matches yaml.load() without inspecting the Loader's class hierarchy.
             template = yaml.load(template_content, Loader=CloudFormationLoader)  # nosec B506
             return template
 
